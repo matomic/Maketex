@@ -1,7 +1,3 @@
-define lsnoerr
-$(shell ls $1 2> /dev/null)
-endef
-
 ## Scan gnuplot source ($1) for tex file output
 define gnuplot_outs
 $(shell \

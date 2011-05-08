@@ -23,12 +23,12 @@ include figmakedef.mk
 
 ## MASTER LIST ##
 # Make a list of existing eps and pdf figures ##
-allEPS = $(call lsnoerr, *eps)
-allPDF = $(call lsnoerr, *pdf)
+allEPS   = $(wildcard *.eps)
+allPDF   = $(wildcard *.pdf)
 
 ## GNUPLOT VARS ##
 # Examine all the Gnuplot source file:
-gnpSRCs := $(call lsnoerr, *gp *gpi)
+gnpSRCs  = $(wildcard *.gp *.gpi)
 # to for stand alone latex output: %.tex + %-inc.eps:
 gnpTEX  := $(foreach src, $(gnpSRCs), $(call gnuplot_outs,$(src)))
 gnpEPSi := $(gnpTEX:.tex=-inc.eps)
@@ -42,43 +42,48 @@ gnpPDF  := $(gnpTEX:.tex=.pdf)
 ##gnpData := $(call gnuplot_deps, figGBL_LL.gp)
 
 ## XFIG VARS ##
-xfgSRC  := $(call lsnoerr, *fig)
-xfgEPS  := $(xfgSRC:.fig=.eps)
-xfgPDF  := $(xfgSRC:.fig=.pdf)
+xfgSRC  = $(wildcard *fig)
+xfgEPS  = $(xfgSRC:.fig=.eps)
+xfgPDF  = $(xfgSRC:.fig=.pdf)
 
 ## TIKZ VARS ##
 TIKZ :=_tikz
-tikzSRC := $(call lsnoerr, *$(TIKZ).tex)
-tikzEPS := $(tikzSRC:.tex=.eps)
-tikzPDF := $(tikzSRC:.tex=.pdf)
+tikzTEX = $(wildcard *$(TIKZ).tex)
+tikzEPS = $(tikzTEX:.tex=.eps)
+tikzPDF = $(tikzTEX:.tex=.pdf)
 
 ## PYTHON/MATPLOTLIBS VARS ##
-pySRC := $(call lsnoerr, *py)
-pyPDF := $(foreach src,$(pySRC), $(call python_outs,$(src)))
-pyEPS := $(pyPDF:.pdf=.eps)
+pySRC   = $(wildcard *.py)
+pyPDF   = $(foreach src,$(pySRC), $(call python_outs,$(src)))
+pyEPS   = $(pyPDF:.pdf=.eps)
 
 ## Mathematica sources ##
-nbSRC := $(call lsnoerr, *.nb)
+nbSRC   = $(wildcard *.nb)
 # scan the Mathematica source for exports
-nbEPS := $(call mathnb_export, $(nbSRC), eps)
-nbPDF := $(call mathnb_export, $(nbSRC), pdf)
+nbEPS   = $(call mathnb_export, $(nbSRC), eps)
+nbPDF   = $(call mathnb_export, $(nbSRC), pdf)
+
+## tex ##
+allTEX  = $(tikzTEX) $(gnpTEX)
 
 ## ORPHANED ##
 ## These remaining figures are not produced by any of the above techniques ##
-orpEPS = $(filter-out $(tikzEPS) $(gnpEPS) $(gnpEPSi) $(xfgEPS) $(pyEPS) $(nbEPS), $(allEPS))
-orpPDF = $(filter-out $(tikzPDF) $(gnpPDF) $(gnpPDFi) $(xfgPDF) $(pyPDF) $(nbPDF), $(allPDF))
+orpEPS  = $(filter-out $(tikzEPS) $(gnpEPS) $(gnpEPSi) $(xfgEPS) \
+	$(pyEPS) $(nbEPS), $(allEPS))
+orpPDF  = $(filter-out $(tikzPDF) $(gnpPDF) $(gnpPDFi) $(xfgPDF) \
+	$(pyPDF) $(nbPDF), $(allPDF))
 
 .PHONY : all clean info allfromeps allfrompdf
 
-.INTERMEDIATE : $(gnpTEX:tex=aux) $(gnpTEX:tex=log) $(gnpEPSi) $(gnpPDFi)
+.INTERMEDIATE : $(allTEX:tex=aux) $(allTEX:tex=log) $(gnpEPSi) $(gnpPDFi)
 
 all : pdf eps 
 
-pdf : $(gnpPDF) $(tikzPDF) $(pyPDF)
+pdf : $(gnpPDF) $(tikzPDF) $(pyPDF) $(xfgPDF)
 	@printf "Make PDF completes. Potentially orphaned PDF:\n"; \
 		printf "  %s\n" $(orpPDF);
 
-eps : $(gnpEPS) $(tikzEPS) $(pyEPS) 
+eps : $(gnpEPS) $(tikzEPS) $(pyEPS) $(xfgEPS)
 	@printf "Make EPS completes. Potentially orphaned EPS:\n"; \
 		printf "  %s\n" $(orpEPS);
 
@@ -90,22 +95,21 @@ orphaneps : $(orpeps)
 allfromeps : all $(allEPS:.eps=.pdf)
 allfrompdf : all $(allPDF:.pdf=.eps)
 
-clean :
-	rm -f $(gnpTEX) $(gnpPDF) $(gnpEPS) $(gnpEPSi) $(tikzEPS) $(tikzPDF) *.aux *.log *.dvi
+# remove auxiliary files
+trash:
+	rm -f $(gnpEPSi) $(gnpPDFi)  *.aux *.log *.dvi
 
-info :
-	@printf ">>>"
-	@printf "%s, " $(gnpEPS); echo
-	@printf ">>>"
-	@printf "%s, " $(gnpEPSi); echo
-	@printf ">>>"
-	@printf "%s, " $(gnpPDF); echo
+# Also clean final product
+clean : trash
+	rm -f $(gnpTEX) $(gnpPDF) $(gnpEPS) $(tikzEPS) $(tikzPDF) $(pyEPS) $(pyPDF)
 
 cleanorphan :
 	rm -f $(orpEPS) $(orpPDF)
 
 .SECONDEXPANSION:
-$(gnpPDF) : $$(patsubst %.pdf,%.tex,$$@) $$(patsubst %.pdf,%-inc.pdf,$$@)
+$(gnpPDF) $(gnpPDF:.pdf=.aux) $(gnpPDF:.pdf=.log) : \
+	$$(subst $$(suffix $$@),.tex,$$@) \
+	$$(subst $$(suffix $$@),-inc.pdf,$$@)
 	@$(call cprun,pdflatex,$?, $@)
 	@pdflatex -interaction=nonstopmode $< > /dev/null;
 
@@ -121,6 +125,10 @@ $(pyPDF) : $$(shell grep -l "$$@" $$(pySRC))
 %.pdf %.aux %.log : %.tex
 	@$(call cprun,pdflatex,$?,$(@:.eps=.pdf))
 	@pdflatex -interaction=nonstopmode $< > /dev/null;
+
+%.pdf %.eps  : %.fig
+	@$(call cprun,fig2pdf,$?,$@ $(@:.eps=.pdf))
+	@fig2pdf -f -C -i "$(XFIG_TEXINPUT)" $< > /dev/null
 
 # These two rules can make make throw circular dependency warning for orphaned files. Should be safe to ignore. One assumes that source eps/pdf file of un-handled origin can be update manually by make orphan
 %.eps : %.pdf
