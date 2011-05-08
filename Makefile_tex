@@ -1,0 +1,26 @@
+#SHELL    = bash
+include texmakedef.mk # common make defs for my various latex projects
+
+### Identify LaTeX mater file by \documentclass
+# override this if desired:
+# MASTER   = "^\\\\documentclass"
+
+MAINTEX = $(shell grep -l $(MASTER) *.tex)
+OUTPDF  = $(MAINTEX:tex=pdf)
+MAINBIB = bibliography.bib
+
+.PHONY : all clean pkg
+
+# ALL
+all : $(OUTPDF)
+###$(OUTPDF:pdf=bib)
+
+pkg : $(OUTPDF) $(OUTPDF:pdf=zip)
+
+%.bib : %.tex $(MAINBIB)
+	@$(call cprun,mkBiBfTex.py,$?,$@);
+	@( python mkBiBfTeX.py $^ > _$@ ) && mv _$@ $@ || rm _$@
+
+LAUNDARY=*.aux *.out *.log *.bbl *.blg *.bak $(OUTPDF)
+clean :
+	rm -f $(LAUNDARY);

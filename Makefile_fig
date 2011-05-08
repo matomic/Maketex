@@ -1,0 +1,141 @@
+include figmakedef.mk
+### Makefile includes for figure folders, mainly for producing PDF and EPS
+### for inclusion in LaTeX document
+###
+### Support Work flow:
+### >> gnuplot with standalone epslatex terminal
+###    1. Scan *gp and *gpi for 'set o' arguments
+###    2. @epstopdf: %-inc.eps -- %-inc.pdf 
+###    3. @pdflatex: %.tex %-inc.pdf -- %.pdf
+###    4. @pdftops:  %.pdf -- %.ps
+###
+### >> xfig figures
+###
+### >> PGF/TIKZ LaTeX source
+###    1. @pdflatex: %$(TIKZ).tex -- %$(TIKZ).pdf
+###    2. @pdftops:  %$(TIKZ).pdf -- %$(TIKZ).eps
+###
+### >> Python source
+###    1. Scan *py for PDF output
+###    2. @python: *pdf
+###
+### >> Other eps figures
+
+## MASTER LIST ##
+# Make a list of existing eps and pdf figures ##
+allEPS = $(call lsnoerr, *eps)
+allPDF = $(call lsnoerr, *pdf)
+
+## GNUPLOT VARS ##
+# Examine all the Gnuplot source file:
+gnpSRCs := $(call lsnoerr, *gp *gpi)
+# to for stand alone latex output: %.tex + %-inc.eps:
+gnpTEX  := $(foreach src, $(gnpSRCs), $(call gnuplot_outs,$(src)))
+gnpEPSi := $(gnpTEX:.tex=-inc.eps)
+# %-inc.eps will then produce %-inc.pdf
+gnpPDFi := $(gnpTEX:.tex=-inc.pdf)
+# outputs %.eps and %pdf:
+gnpEPS  := $(gnpTEX:.tex=.eps)
+gnpPDF  := $(gnpTEX:.tex=.pdf)
+# subract gnuplot list from master list:
+## wanted to use make to update plot whenever data are updated, perhaps should set manual modeline:
+##gnpData := $(call gnuplot_deps, figGBL_LL.gp)
+
+## XFIG VARS ##
+xfgSRC  := $(call lsnoerr, *fig)
+xfgEPS  := $(xfgSRC:.fig=.eps)
+xfgPDF  := $(xfgSRC:.fig=.pdf)
+
+## TIKZ VARS ##
+TIKZ :=_tikz
+tikzSRC := $(call lsnoerr, *$(TIKZ).tex)
+tikzEPS := $(tikzSRC:.tex=.eps)
+tikzPDF := $(tikzSRC:.tex=.pdf)
+
+## PYTHON/MATPLOTLIBS VARS ##
+pySRC := $(call lsnoerr, *py)
+pyPDF := $(foreach src,$(pySRC), $(call python_outs,$(src)))
+pyEPS := $(pyPDF:.pdf=.eps)
+
+## Mathematica sources ##
+nbSRC := $(call lsnoerr, *.nb)
+# scan the Mathematica source for exports
+nbEPS := $(call mathnb_export, $(nbSRC), eps)
+nbPDF := $(call mathnb_export, $(nbSRC), pdf)
+
+## ORPHANED ##
+## These remaining figures are not produced by any of the above techniques ##
+orpEPS = $(filter-out $(tikzEPS) $(gnpEPS) $(gnpEPSi) $(xfgEPS) $(pyEPS) $(nbEPS), $(allEPS))
+orpPDF = $(filter-out $(tikzPDF) $(gnpPDF) $(gnpPDFi) $(xfgPDF) $(pyPDF) $(nbPDF), $(allPDF))
+
+.PHONY : all clean info allfromeps allfrompdf
+
+.INTERMEDIATE : $(gnpTEX:tex=aux) $(gnpTEX:tex=log) $(gnpEPSi) $(gnpPDFi)
+
+all : $(gnpEPS) $(gnpPDF) $(tikzEPS) $(tikzPDF) $(pyEPS) $(pyPDF)
+	@printf "Make completes. The following are orphaned \nEPS: "
+	@printf "%s  " $(orpEPS);
+	@printf "\nPDF: "
+	@printf "%s  " $(orpPDF);
+	@printf "\n"
+
+######## Use with care #########
+allfromeps : $(allEPS:.eps=.pdf)
+allfrompdf : $(allPDF:.pdf=.eps)
+
+clean :
+	rm -f $(gnpTEX) $(gnpPDF) $(gnpEPS) $(gnpEPSi) $(tikzEPS) $(tikzPDF) *.aux *.log *.dvi
+
+info :
+	@printf ">>>"
+	@printf "%s, " $(gnpEPS); echo
+	@printf ">>>"
+	@printf "%s, " $(gnpEPSi); echo
+	@printf ">>>"
+	@printf "%s, " $(gnpPDF); echo
+
+cleanorphan :
+	rm -f $(orpEPS) $(orpPDF)
+
+#$(gnuPDF) : $(@:.pdf=.tex) $(@:.pdf=-inc.pdf)
+#	@$(call cprun,pdflatex,$?,$(@:.eps=.pdf))
+#	@pdflatex -interaction=nonstopmode $< > /dev/null;
+
+#$(gnuEPS) : $(@:.eps=.tex) $(@:.eps=-inc.pdf)
+#	@$(call cprun,pdflatex,$?,$(@:.eps=.pdf))
+#	@pdflatex -interaction=nonstopmode $< > /dev/null;
+.SECONDEXPANSION:
+#$(gnpPDF) : $$(patsubst %.pdf,%.tex,$$@) $$(patsubst %.pdf,%-inc.pdf,$$@)
+#	@$(call cprun,pdflatex,$?, $@)
+#	@pdflatex -interaction=nonstopmode $< > /dev/null;
+#
+#$(gnpEPS) : $$(patsubst %.eps,%.pdf,$$@)
+#	@$(call cprun,pdftops,$?, $@)
+#	@pdftops $< $@
+
+$(gnpTEX) $(gnpEPSi) $(gnpPDFi) : $$(shell grep -l "$$@" $$(gnpSRCs))
+	@$(call cprun,gnuplot,$<, $(strip $(call gnuplot_outs,$?)))
+	@gnuplot $<;
+	@$(foreach gtex, $(strip $(call gnuplot_outs,$?)), \
+		$(call cprun,epstopdf,$(gtex:.tex=-inc.eps),$(gtex:.tex=-inc.pdf)) \
+		epstopdf $(gtex:.tex=-inc.eps);)
+
+$(pyPDF) : $$(shell grep -l "$$@" $$(pySRC))
+	@$(call cprun,python,$<,$(strip $(call python_outs,$?)))
+	@python  $< $@;
+
+### PATTERN RULES ###
+%.pdf : %.eps
+	@$(call cprun,epstopdf,$?,$@) # @printf "epstopdf $<\n";
+	@epstopdf $<;
+
+%.eps %.pdf %.aux %.log : %.tex
+	@$(call cprun,pdflatex,$?,$(@:.eps=.pdf))
+	@pdflatex -interaction=nonstopmode $< > /dev/null;
+	@$(call cprun,pdftops,$(@:.eps=.pdf),$(@:.pdf=.eps))
+	@pdftops $(@:.eps=.pdf) $(@:.pdf=.eps);
+	@touch $(@:.eps=.pdf); # move the pdf time stamp
+
+#%.eps : %.pdf
+#	@$(call cprun,pdftops,$?,$@)
+#	@pdftops $< $@;
