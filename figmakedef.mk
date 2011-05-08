@@ -43,5 +43,5 @@ FRED = [1;31m
 FGRN = [1;32m
 FYEL = [1;33m
 define cprun 
-printf "%s\n" "Running $(FRED)$1$(RS) to make $(FYEL)$3$(RS) from $(FGRN)$2$(RS)";
+printf "Running $(FRED)%9s$(RS) to make $(FYEL)%40s$(RS) from $(FGRN)%s$(RS)\n" "$1" "$3" "$2";
 endef

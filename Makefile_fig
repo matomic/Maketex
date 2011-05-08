@@ -72,12 +72,17 @@ orpPDF = $(filter-out $(tikzPDF) $(gnpPDF) $(gnpPDFi) $(xfgPDF) $(pyPDF) $(nbPDF
 
 .INTERMEDIATE : $(gnpTEX:tex=aux) $(gnpTEX:tex=log) $(gnpEPSi) $(gnpPDFi)
 
-all : $(gnpEPS) $(gnpPDF) $(tikzEPS) $(tikzPDF) $(pyEPS) $(pyPDF)
+all : PDF EPS
 	@printf "Make completes. The following are orphaned \nEPS: "
 	@printf "%s  " $(orpEPS);
 	@printf "\nPDF: "
 	@printf "%s  " $(orpPDF);
 	@printf "\n"
+
+PDF : $(gnpPDF) $(tikzPDF) $(pyPDF) 
+
+EPS : $(gnpEPS) $(tikzEPS) $(pyEPS) 
+
 
 ######## Use with care #########
 allfromeps : $(allEPS:.eps=.pdf)
@@ -97,45 +102,28 @@ info :
 cleanorphan :
 	rm -f $(orpEPS) $(orpPDF)
 
-#$(gnuPDF) : $(@:.pdf=.tex) $(@:.pdf=-inc.pdf)
-#	@$(call cprun,pdflatex,$?,$(@:.eps=.pdf))
-#	@pdflatex -interaction=nonstopmode $< > /dev/null;
-
-#$(gnuEPS) : $(@:.eps=.tex) $(@:.eps=-inc.pdf)
-#	@$(call cprun,pdflatex,$?,$(@:.eps=.pdf))
-#	@pdflatex -interaction=nonstopmode $< > /dev/null;
 .SECONDEXPANSION:
-#$(gnpPDF) : $$(patsubst %.pdf,%.tex,$$@) $$(patsubst %.pdf,%-inc.pdf,$$@)
-#	@$(call cprun,pdflatex,$?, $@)
-#	@pdflatex -interaction=nonstopmode $< > /dev/null;
-#
-#$(gnpEPS) : $$(patsubst %.eps,%.pdf,$$@)
-#	@$(call cprun,pdftops,$?, $@)
-#	@pdftops $< $@
+$(gnpPDF) : $$(patsubst %.pdf,%.tex,$$@) $$(patsubst %.pdf,%-inc.pdf,$$@)
+	@$(call cprun,pdflatex,$?, $@)
+	@pdflatex -interaction=nonstopmode $< > /dev/null;
 
-$(gnpTEX) $(gnpEPSi) $(gnpPDFi) : $$(shell grep -l "$$@" $$(gnpSRCs))
+$(gnpTEX) $(gnpEPSi) : $$(shell grep -l "$$@" $$(gnpSRCs))
 	@$(call cprun,gnuplot,$<, $(strip $(call gnuplot_outs,$?)))
 	@gnuplot $<;
-	@$(foreach gtex, $(strip $(call gnuplot_outs,$?)), \
-		$(call cprun,epstopdf,$(gtex:.tex=-inc.eps),$(gtex:.tex=-inc.pdf)) \
-		epstopdf $(gtex:.tex=-inc.eps);)
 
 $(pyPDF) : $$(shell grep -l "$$@" $$(pySRC))
 	@$(call cprun,python,$<,$(strip $(call python_outs,$?)))
 	@python  $< $@;
 
 ### PATTERN RULES ###
+%.pdf %.aux %.log : %.tex
+	@$(call cprun,pdflatex,$?,$(@:.eps=.pdf))
+	@pdflatex -interaction=nonstopmode $< > /dev/null;
+
+%.eps : %.pdf
+	@$(call cprun,pdftops,$?,$@)
+	@pdftops $< $@;
+
 %.pdf : %.eps
 	@$(call cprun,epstopdf,$?,$@) # @printf "epstopdf $<\n";
 	@epstopdf $<;
-
-%.eps %.pdf %.aux %.log : %.tex
-	@$(call cprun,pdflatex,$?,$(@:.eps=.pdf))
-	@pdflatex -interaction=nonstopmode $< > /dev/null;
-	@$(call cprun,pdftops,$(@:.eps=.pdf),$(@:.pdf=.eps))
-	@pdftops $(@:.eps=.pdf) $(@:.pdf=.eps);
-	@touch $(@:.eps=.pdf); # move the pdf time stamp
-
-#%.eps : %.pdf
-#	@$(call cprun,pdftops,$?,$@)
-#	@pdftops $< $@;
