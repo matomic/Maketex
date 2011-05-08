@@ -72,21 +72,23 @@ orpPDF = $(filter-out $(tikzPDF) $(gnpPDF) $(gnpPDFi) $(xfgPDF) $(pyPDF) $(nbPDF
 
 .INTERMEDIATE : $(gnpTEX:tex=aux) $(gnpTEX:tex=log) $(gnpEPSi) $(gnpPDFi)
 
-all : PDF EPS
-	@printf "Make completes. The following are orphaned \nEPS: "
-	@printf "%s  " $(orpEPS);
-	@printf "\nPDF: "
-	@printf "%s  " $(orpPDF);
-	@printf "\n"
+all : pdf eps 
 
-PDF : $(gnpPDF) $(tikzPDF) $(pyPDF) 
+pdf : $(gnpPDF) $(tikzPDF) $(pyPDF)
+	@printf "Make PDF completes. Potentially orphaned PDF:\n"; \
+		printf "  %s\n" $(orpPDF);
 
-EPS : $(gnpEPS) $(tikzEPS) $(pyEPS) 
+eps : $(gnpEPS) $(tikzEPS) $(pyEPS) 
+	@printf "Make EPS completes. Potentially orphaned EPS:\n"; \
+		printf "  %s\n" $(orpEPS);
 
+orphan : orphanpdf orphaneps
+orphanpdf : $(orpPDF)
+orphaneps : $(orpeps)
 
 ######## Use with care #########
-allfromeps : $(allEPS:.eps=.pdf)
-allfrompdf : $(allPDF:.pdf=.eps)
+allfromeps : all $(allEPS:.eps=.pdf)
+allfrompdf : all $(allPDF:.pdf=.eps)
 
 clean :
 	rm -f $(gnpTEX) $(gnpPDF) $(gnpEPS) $(gnpEPSi) $(tikzEPS) $(tikzPDF) *.aux *.log *.dvi
@@ -120,6 +122,7 @@ $(pyPDF) : $$(shell grep -l "$$@" $$(pySRC))
 	@$(call cprun,pdflatex,$?,$(@:.eps=.pdf))
 	@pdflatex -interaction=nonstopmode $< > /dev/null;
 
+# These two rules can make make throw circular dependency warning for orphaned files. Should be safe to ignore. One assumes that source eps/pdf file of un-handled origin can be update manually by make orphan
 %.eps : %.pdf
 	@$(call cprun,pdftops,$?,$@)
 	@pdftops $< $@;
