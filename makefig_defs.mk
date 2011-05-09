@@ -38,6 +38,14 @@ RS   = [0m
 FRED = [1;31m
 FGRN = [1;32m
 FYEL = [1;33m
-define cprun 
-printf "Running $(FRED)%8s$(RS) to make $(FYEL)%35s$(RS) from $(FGRN)%s$(RS)\n" "$1" "$3" "$2";
+### Using cprintf to announce what's being run
+# $(call cprun,COM,ARG1,ARG2)
+# Running COM on ARG1 to make ARG2
+define cprun
+printf "Running $(FRED)%8s$(RS) on $(FYEL)%20s$(RS) to make $(FGRN)%s$(RS).\n" "$1" "$2" "$3"
+endef
+
+## replace the suffix of $2 with $1.
+define substsuffix
+$(subst $(suffix $2),$1,$2)
 endef

@@ -1,26 +1,94 @@
 #SHELL    = bash
-include texmakedef.mk # common make defs for my various latex projects
+include maketex_defs.mk # common make defs for my various latex projects
 
 ### Identify LaTeX mater file by \documentclass
 # override this if desired:
 # MASTER   = "^\\\\documentclass"
 
-MAINTEX = $(shell grep -l $(MASTER) *.tex)
-OUTPDF  = $(MAINTEX:tex=pdf)
+### Identify LaTeX mater file by \documentclass
+MASTER  = "^\\\\documentclass"
+MAINTEXSRC = $(shell grep -l $(MASTER) *.tex)
+PDFOUT  = $(MAINTEXSRC:%.tex=%.pdf)
+# The variable MAINBIB if define is used to generate a partial bibliography exactly equal to the need of this project from my master library. Perhaps should grep from source in the future
 MAINBIB = bibliography.bib
 
-.PHONY : all clean pkg
+### For each master file BASE.tex, define variables BASE_deps, BASE_texs, BASE_bibs, BASE_figs, BASE_vfig, BASE_rfig that holds its requisites.
+rmsuffix=$(1:%$(suffix $1)=%)
+define texallchildren
+$(call rmsuffix,$1)_texs = $(call texdeepinclude,$1)
+endef
+define texauxiliaries
+$(foreach x,$1 $(value $(call rmsuffix,$1)_texs),
+$(call rmsuffix,$1)_bibs += $(call includedbibs,$x)
+$(call rmsuffix,$1)_figs += $(addprefix figures/,$(call includedfigs,$x)))
+endef
+#
+#$(call rmsuffix,$1)_deps = $(call mktexdep, $(1))
+# divide figs further up between vector and raster graphics
+define texdeps_all
+base=$(call rmsuffix,$1)
+$(call rmsuffix,$1)_vfig = $(filter %.eps %.pdf,$(value $(call rmsuffix,$1)_figs))
+$(call rmsuffix,$1)_rfig = $(filter %.png %.jpg,$(value $(call rmsuffix,$1)_figs))
+$(call rmsuffix,$1)_deps = $1         \
+	$(value $(call rmsuffix,$1)_texs) \
+	$(value $(call rmsuffix,$1)_bibs) \
+	$(value $(call rmsuffix,$1)_figs)
+endef
+#
+$(foreach x,$(MAINTEXSRC),                           \
+	$(eval $(call texallchildren,$(x)))              \
+	$(eval $(call texauxiliaries,$(x)))              \
+	$(eval $(call texdeps_all,$(x))))
+#	$(foreach y,$(value $(call rmsuffix,$(x))_texs), \
+#		$(eval $(call texauxiliaries,$(y),$(x))))     \
+#$(eval $(call texauxiliaries,$(value $(call rmsuffix,$(x))_texs))) \
+#
+#### Append requisite list for all tex files
+#define all_deps
+#ALL_deps := $(ALL_deps) $(value $(call rmsuffix,$1)_deps)
+#ALL_texs := $(ALL_texs) $(value $(call rmsuffix,$1)_texs)
+#ALL_bibs := $(ALL_bibs) $(value $(call rmsuffix,$1)_bibs)
+#ALL_figs := $(ALL_figs) $(value $(call rmsuffix,$1)_figs)
+#ALL_vfig := $(ALL_vfig) $(value $(call rmsuffix,$1)_vfig)
+#ALL_rfig := $(ALL_rfig) $(value $(call rmsuffix,$1)_rfig)
+#endef
+##
+#$(foreach x,$(MAINTEXSRC),$(eval $(call all_deps,$(x))))
+##
+
+.PHONY : all clean pkg info
 
 # ALL
-all : $(OUTPDF)
-###$(OUTPDF:pdf=bib)
+all : $(PDFOUT)
+###$(PDFOUT:pdf=bib)
 
-pkg : $(OUTPDF) $(OUTPDF:pdf=zip)
+depinfo:
+	@printf "%s << %s\n  \
+$(EGRN)incl files$(ERST)  : %s\n  \
+$(EGRN)Bib files$(ERST)   : %s\n  \
+$(EGRN)Vector figs$(ERST) : %s\n  \
+$(EGRN)Raster figs$(ERST) : %s\n  \
+$(EGRN)Everything$(ERST)  : %s\n\
+------------------------------------------------------------------------------------\
+\n" $(foreach xx, $(MAINTEXSRC),                           \
+"$(xx:%.tex=%.pdf)" "$(xx)"                                \
+"$(filter-out $(xx),$(value $(call rmsuffix,$(xx))_texs))" \
+"$(value $(call rmsuffix,$(xx))_bibs)"                     \
+"$(sort $(value $(call rmsuffix,$(xx))_vfig))"             \
+"$(sort $(value $(call rmsuffix,$(xx))_rfig))"             \
+"$(value $(call rmsuffix,$(xx))_deps)")
 
-%.bib : %.tex $(MAINBIB)
+pkg : $(PDFOUT) $(PDFOUT:pdf=zip)
+
+## If main bib
+ifdef MAINBIB
+BIBPROG = mkBiBfTeX.py
+RUNBIB  = python $(BIBPROG)
+%.bib : %.tex $(MAINBIB) $(BIBPROG)
 	@$(call cprun,mkBiBfTex.py,$?,$@);
-	@( python mkBiBfTeX.py $^ > _$@ ) && mv _$@ $@ || rm _$@
+	@( $(RUNBIB) $^ > _$@ ) && mv _$@ $@ || rm _$@
+endif
 
-LAUNDARY=*.aux *.out *.log *.bbl *.blg *.bak $(OUTPDF)
+LAUNDARY=*.aux *.out *.log *.bbl *.blg *.bak $(PDFOUT)
 clean :
 	rm -f $(LAUNDARY);

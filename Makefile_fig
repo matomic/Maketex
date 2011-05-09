@@ -1,4 +1,5 @@
-include figmakedef.mk
+# SHELL=bash
+include makefig_defs.mk
 ### Makefile includes for figure folders, mainly for producing PDF and EPS
 ### for inclusion in LaTeX document
 ###
@@ -107,9 +108,11 @@ cleanorphan :
 	rm -f $(orpEPS) $(orpPDF)
 
 .SECONDEXPANSION:
+#	$$(subst $$(suffix $$@),.tex,$$@) \
+#	$$(subst $$(suffix $$@),-inc.pdf,$$@)
 $(gnpPDF) $(gnpPDF:.pdf=.aux) $(gnpPDF:.pdf=.log) : \
-	$$(subst $$(suffix $$@),.tex,$$@) \
-	$$(subst $$(suffix $$@),-inc.pdf,$$@)
+	$$(call substsuffix,.tex,$$@) \
+	$$(call substsuffix,-inc.pdf,$$@)
 	@$(call cprun,pdflatex,$?, $@)
 	@pdflatex -interaction=nonstopmode $< > /dev/null;
 
@@ -128,7 +131,7 @@ $(pyPDF) : $$(shell grep -l "$$@" $$(pySRC))
 
 %.pdf %.eps  : %.fig
 	@$(call cprun,fig2pdf,$?,$@ $(@:.eps=.pdf))
-	@fig2pdf -f -C -i "$(XFIG_TEXINPUT)" $< > /dev/null
+	@fig2pdf -f -C -i "$(call substsuffix,_def.tex,$@)" $< > /dev/null
 
 # These two rules can make make throw circular dependency warning for orphaned files. Should be safe to ignore. One assumes that source eps/pdf file of un-handled origin can be update manually by make orphan
 %.eps : %.pdf
