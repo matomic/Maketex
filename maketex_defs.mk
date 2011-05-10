@@ -43,145 +43,165 @@ NULLALL  =&> /dev/null
 PDFLOG=$(@:%.pdf=%.log)
 DVILOG=$(@:%.dvi=%.log)
 
-### Check TeX file for dependency
-define echodepfile 
-[ $${$1%$2}$2 = $${$1} ] && echo $${$1} && continue
+############# Check TeX file for dependency #############
+## shell echo by suffix; if the shell variable ${$1} has suffix $2, print it:
+define sh_echo_file_with_suffix
+if [[ $${$1%$2}$2 = $${$1} ]]; then echo $${$1}; continue; fi
 endef
-# given tex filename $1, find print its immediate includes
+
+## $(call define sh_echo_tex_cmd_args,filename,latexcommand,suffix)
+## scan file list in $1 for uncommented command \$2[OPTS]{ARGS} for comma
+## separated list of file in ARGS
+## then, echo ARGS if it already has suffix $3, otherwise ARGS.$3
+## $1 is a space separated list of filenames
+## $2 is a colon separated list of latex commands
+## $3 is a list of suffix to match
+## $4 (OPTIONAL) is a default list of suffix to print when all suffix in $3 failed.
+TEXCMD_GREP_RE="^[^%]*\\\\\($(subst :,\|,$2)\)\(\|\[[^][]*\]\){[^}{]*}"
+define sh_echo_tex_cmd_args
+[ -f $(1) ] && grep -o $(TEXCMD_GREP_RE) $(1)                         \
+    | grep -o "$(TeXARG)" | tr -d "{}" | tr , "\n" | while read f; do \
+    $(foreach s,$3,$(call sh_echo_file_with_suffix,f,.$s);)                \
+        [[ -n "$4" ]] && (true;$(foreach s,$4,echo $${f}.$s;)) \
+        || (true;$(foreach s,$3,echo $${f}.$s;)) \
+    done
+endef
+
+## given tex filename $1 print its immediate includes
 define includedtexs
-$(shell [ -f $(1) ] && grep -o "$(TeXPFX)\(include\|input\)$(TeXARG)" $(1) \
-	| grep -o "$(TeXARG)" | tr -d "{}" | tr , "\n"                         \
-	| while read f; do $(call echodepfile,f,.tex); echo $${f}.tex; done )
+$(shell $(call sh_echo_tex_cmd_args,$1,include:input,tex);)
 endef
+##
+
+## giving a tex filename, print it, the parse and print all child
+## tex source recursively.
 define texdeepinclude
 $(call includedtexs,$1)\
 $(foreach inp,$(call includedtexs,$1),$(call texdeepinclude,$(inp)))
 endef
-# make list of included bibs
+##
+
+## make list of included bibs
 define includedbibs
-$(shell echo $(1) > /dev/null; [ -f $(1) ] && grep -o "$(TeXPFX)\(bibliography\)$(TeXARG)" $(1) \
-	| grep -o "$(TeXARG)" | tr -d "{}" | tr , "\n"                       \
-	| while read f; do $(call echodepfile,f,.bib); echo $${f}.bib; done )
+$(shell $(call sh_echo_tex_cmd_args,$1,bibliography,bib);)
 endef
-# make list of figures. If no extension is specified, assumes BOTH eps and pdf.
+##
+
+## make list of figures. If no extension is specified, assumes BOTH eps and pdf.
 define includedfigs
-$(shell [ -f $(1) ] && grep -o "$(TeXPFX)\(includegraphics\)$(TeXOPT)$(TeXARG)" $(1) \
-	| grep -o "$(TeXARG)" | tr -d "{}"                                         \
-	| while read f; do $(call echodepfile,f,.eps); $(call echodepfile,f,.pdf); \
-	$(call echodepfile,f,.jpg); $(call echodepfile,f,.png);                    \
-	echo $${f}.eps $${f}.pdf; done )
+$(shell $(call sh_echo_tex_cmd_args,$1,includegraphics,jpg png eps pdf,eps pdf);)
 endef
+##
+############# END: Check TeX file for dependency #############
 
-## Use an external awk script instead, same thing
-#define mktexdep
-#$(shell [ -f $1 ] && $(AWK) -f mktexdep.awk $1 2> /dev/null)
-#endef
-
+############# BEGIN: Pretty print #############
 ### print string using color
 # $(call cprintf,"STR",COLOR)
-define cprintf
+define sh_cprintf
 printf "$2$1$(ERST)"
 endef
 
-### Using cprintf to announce what's being run
-# $(call cprun,COM,ARG1,ARG2)
+### Announce what's being run in color
+# $(call sh_cprun,COM,ARG1,ARG2)
 # Running COM on ARG1 to make ARG2
- 
-define cprun
+define sh_cprun
 printf "Running $(ERED)%12s$(ERST) on $(EGRN)%20s$(ERST) to make $(EBLU)%s$(ERST).\n" "$1" "$(strip $2)" "$(strip $3)"
 endef
+############# END: Pretty print #############
 
+############# BEGIN: LaTeX grind works #############
 ### analyze tex file for argument to bibtex and run bibtex.
 #  if an uncommented \bibliography{AUG} macro is found, print TEXFILEBASENAME.aux
 #  else assume using multibib, each \newcites{ARG} gets and aux file with filename ARG.aux
-# $(call auxlist foo.tex)
-define auxlist
+# $(call sh_auxlist foo.tex)
+define sh_auxlist
 if [ -n "$$($(EGREP) -o "^[^%]*\\\\bibliography{[^{}]*}" $1)" ]; \
 then ( echo $(1:.tex=.aux) ); \
 else ( $(EGREP) -o "^[^%]*\\newcites{[^{}]*}" $1 | \
   sed 's:.*\\newcites{\([^{}]*\)}:\1:' | \
   tr ',' ' '; ); fi
 endef
+define sh_auxlist_2
+if [[ -n "$(call sh_echo_tex_cmd_args,$1,bibliography,bib)" ]]; then ( echo $(1:.tex=.aux) ); fi
+endef
 
 #### Look for undefined citation ###
 
 # run bibtex on all the necessary files
-# $(call runbib,$1)
-define runbib
-for f in $$($(call auxlist,$1)); do \
+# $(call sh_runbib,$1)
+define sh_runbib
+for f in $$($(call sh_auxlist,$1)); do \
 printf "aux file:%s\n" $${f}; \
-$(call cprun,$(BIBTEX),$${f%.aux},$${f%.aux}.bbl); \
+$(call sh_cprun,$(BIBTEX),$${f%.aux},$${f%.aux}.bbl); \
 $(BIBTEX) $${f%.aux} $(NULLOUT); done
 endef
 
 # run pdflatex
-define runpdftex
-$(call cprun,$(PDFLATEX),$1,$(subst tex,pdf,$1)); \
+define sh_runpdftex
+$(call sh_cprun,$(PDFLATEX),$1,$(subst tex,pdf,$1)); \
 $(PDFLATEX) $(TEXOPTS) $1 $(NULLOUT)
 endef
 
 # run latex
-define runtex
-$(call cprun,$(LATEX),$1,$(subst tex,dvi,$1)); \
+define sh_runtex
+$(call sh_cprun,$(LATEX),$1,$(subst tex,dvi,$1)); \
   $(LATEX) $(TEXOPTS) $1 $(NULLOUT)
 endef
 
-#$(call runsed,REGEXP,IN,OUT)
-define runsed
-$(call cprun,$(SED),$1 $2,$3); \
+#$(call sh_runsed,REGEXP,IN,OUT)
+define sh_runsed
+$(call sh_cprun,$(SED),$1 $2,$3); \
   $(SED) $1 $2 > $3
 endef
 
 # joining two pdfs using pdftk
-#define pdfjoin
-#$(call cprun,$(PDFTK) join,$2,$1); \
+#define sh_pdfjoin
+#$(call sh_cprun,$(PDFTK) join,$2,$1); \
 #  $(PDFTK) $2 output $1; \
 #  printf "\n"
 #endef
-define pdfjoin
-$(call cprun,$(PDFTK) join,$2,$1); \
+define sh_pdfjoin
+$(call sh_cprun,$(PDFTK) join,$2,$1); \
   stapler -fq cat $2 $1; \
   printf "\n"
 endef
+############# END: LaTeX grind works #############
 
 .SECONDEXPANSION:
 # This rule makes pdf from a master file:
-#%.pdf : %.tex $$(call mktexdep,$$(subst pdf,tex,$$@))
-%.pdf : %.tex $$(value $$(call rmsuffix,$$@)_deps)
+%.pdf : %.tex $$(value $$(call rmsuffix,$$@).tex_deps)
 	@# print changed dependents
-	@printf "+ "; $(call cprintf,$?,$(EBLU)); printf "\n";
+	@printf "+ "; $(call sh_cprintf,$?,$(EBLU)); printf "\n";
 	@# Run tex and bibtex if necessary
 	@if ( printf "$?" | egrep -q $(GRPBT) ); then \
-$(call runpdftex, $<) && $(call runbib, $<); \
+$(call sh_runpdftex, $<) && $(call sh_runbib, $<); \
 fi; \
-$(call runpdftex, $<)
+$(call sh_runpdftex, $<)
 	@# Check log for 
 	@m=0; while $(EGREP) $(GRPW1) $(PDFLOG) \
 && [ "$$m" -lt $(MAXRPT) ]; do \
 ( $(EGREP) -o $(GRPW3) $(PDFLOG) | grep -o "[^\`]*$$"; \
-$(call runbib, $<) && $(call runpdftex,$<) ); \
+$(call sh_runbib, $<) && $(call sh_runpdftex,$<) ); \
 m=$$(( m + 1 )); done; # check for undefined
 	@m=0; while $(EGREP) $(GRPW2) $(PDFLOG) \
 && [ "$$m" -lt $(MAXRPT) ]; do \
-( $(call runpdftex,$<) ); \
+( $(call sh_runpdftex,$<) ); \
 m=$$(( m + 1 )); done;
 
-#%.zip : %.tex $$(call mktexdep,$$(subst zip,tex,$$@))
-%.zip : %.tex $$(value $$(call rmsuffix,$$@)_deps)
+%.zip : %.tex $$(value $$(call rmsuffix,$$@).tex_deps)
 	zip $@ $^
 
-#%.dvi : %.tex $$(call mktexdep,$$(subst pdf,tex,$$@))
-%.dvi : %.tex $$(value $$(call rmsuffix,$$@)_deps)
-	@printf "+ "; $(call cprintf,$?,$(EBLU)); printf "\n";
-	@$(call runtex,$<)
+%.dvi : %.tex $$(value $$(call rmsuffix,$$@).tex_deps)
+	@printf "+ "; $(call sh_cprintf,$?,$(EBLU)); printf "\n";
+	@$(call sh_runtex,$<)
 	@if ( printf "$?" | egrep -q $(GRPBT) ); then \
-	( $(call runbib, $<) ) && $(call runtex,$<) \
+	( $(call sh_runbib, $<) ) && $(call sh_runtex,$<) \
 	fi
 	@m=0; while $(EGREP) $(GRPW1) $(subst pdf,log,$@) \
 	&& [ "$$m" -lt $(MAXRPT) ]; do \
-	( ( $(call runbib, $<) ) && $(call runtex,$<) ); \
+	( ( $(call sh_runbib, $<) ) && $(call sh_runtex,$<) ); \
 	m=$$(( m + 1 )); done;
 	@m=0; while $(EGREP) $(GRPW2) $(subst pdf,log,$@) \
 	&& [ "$$m" -lt $(MAXRPT) ]; do \
-	( $(call runtex,$<) ); \
+	( $(call sh_runtex,$<) ); \
 	m=$$(( m + 1 )); done;

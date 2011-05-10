@@ -78,7 +78,7 @@ orpPDF  = $(filter-out $(tikzPDF) $(gnpPDF) $(gnpPDFi) $(xfgPDF) \
 
 .INTERMEDIATE : $(allTEX:tex=aux) $(allTEX:tex=log) $(gnpEPSi) $(gnpPDFi)
 
-all : pdf eps 
+all : pdf eps
 
 pdf : $(gnpPDF) $(tikzPDF) $(pyPDF) $(xfgPDF)
 	@printf "Make PDF completes. Potentially orphaned PDF:\n"; \
@@ -95,6 +95,10 @@ orphaneps : $(orpeps)
 ######## Use with care #########
 allfromeps : all $(allEPS:.eps=.pdf)
 allfrompdf : all $(allPDF:.pdf=.eps)
+
+#######
+depinfo :
+	# GNUPLOTS: 
 
 # remove auxiliary files
 trash:
