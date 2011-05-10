@@ -1,10 +1,10 @@
 #SHELL    = bash
 
 ### Some string for grep
-GRPW1   :="LaTeX Warning: There were undefined references.
-GRPW1   :=$(GRPW1)|Package natbib Warning: There were undefined citations."
+GRPW1   :="LaTeX Warning: There were undefined references.\
+\|Package natbib Warning: There were undefined citations."
 GRPW2   :="LaTeX Warning: Label(s) may have changed. Rerun to get cross-references right."
-GRPW3   :="LaTeX Warning: Citation \`[^']*"
+GRPW3   :="Warning: Citation \`[^']*"
 GRPBT   :=
 ### Some more useful regular expression:
 TeXARG  :={[^{}]*}
@@ -14,12 +14,13 @@ TeXPFX  :=^[^%]*\\\\
 TEXOPTS := -interaction=nonstopmode
 LATEX   := latex
 PDFLATEX:= pdflatex
+DVIPS   := dvips
 PDFTK   := pdftk
 BIBTEX  := bibtex
 EPSPDF  := epstopdf
 
 GREP    := grep
-EGREP   := $(GREP) -e 
+EGREP   := $(GREP) -E 
 SED     := sed
 # should work with both gawk (preferred) and mawk
 AWK     := awk
@@ -37,9 +38,9 @@ ERST    :=[0m
 MAXRPT    =4
 
 ### SUPPRESS OUTPUT
-NULLOUT  =1> /dev/null
-NULLERR  =2> /dev/null
-NULLALL  =&> /dev/null
+NULLOUT :=1> /dev/null
+NULLERR :=2> /dev/null
+NULLALL :=>& /dev/null
 
 PDFLOG=$(@:%.pdf=%.log)
 DVILOG=$(@:%.dvi=%.log)
@@ -123,7 +124,7 @@ endef
 # $(call sh_cprun,COM,ARG1,ARG2)
 # Running COM on ARG1 to make ARG2
 define sh_cprun
-printf "Running $(ERED)%12s$(ERST) on $(EGRN)%20s$(ERST) to make $(EBLU)%s$(ERST).\n" "$1" "$(strip $2)" "$(strip $3)"
+printf "Running $(ERED)%12s$(ERST) on $(EYLW)%20s$(ERST) to make $(EGRN)%s$(ERST).\n" "$1" "$(strip $2)" "$(strip $3)"
 endef
 ############# END: Pretty print #############
 
@@ -133,11 +134,11 @@ endef
 #  else assume using multibib, each \newcites{ARG} gets and aux file with filename ARG.aux
 # $(call sh_auxlist foo.tex)
 define sh_auxlist
-if [ -n "$$($(EGREP) -o "^[^%]*\\\\bibliography{[^{}]*}" $1)" ]; \
-then ( echo $(1:.tex=.aux) ); \
-else ( $(EGREP) -o "^[^%]*\\newcites{[^{}]*}" $1 | \
-  sed 's:.*\\newcites{\([^{}]*\)}:\1:' | \
-  tr ',' ' '; ); fi
+if [ -n "$$($(GREP) -o "^[^%]*\\\\bibliography{[^{}]*}" $1)" ]; \
+then echo $(1:.tex=.aux); \
+else $(GREP) -o "^[^%]*\\newcites{[^{}]*}" $1 | \
+  $(SED) 's:.*\\newcites{\([^{}]*\)}:\1:' | \
+  tr ',' ' '; fi
 endef
 define sh_auxlist_2
 if [[ -n "$(call sh_echo_tex_cmd_args,$1,bibliography,bib)" ]]; then ( echo $(1:.tex=.aux) ); fi
@@ -154,24 +155,23 @@ $(call sh_cprun,$(BIBTEX),$${f%.aux},$${f%.aux}.bbl); \
 $(BIBTEX) $${f%.aux} $(NULLOUT); done
 endef
 
-# run pdflatex
-define sh_runpdftex
-$(call sh_cprun,$(PDFLATEX),$1,$(subst tex,pdf,$1)); \
-$(PDFLATEX) $(TEXOPTS) $1 $(NULLOUT); \
-$(GREP) "Warning:" $(1:%.tex=%.log) | sed -e 's,^\(.*Warning\),  $(ERED)\1$(ERST),'
-endef
-
-# run latex
-define sh_runtex
-$(call sh_cprun,$(LATEX),$1,$(subst tex,dvi,$1)); \
-$(LATEX) $(TEXOPTS) $1 $(NULLOUT); \
-$(GREP) "Warning:" $(1:%.tex=%.log) | sed -e 's,^\(.*\):,  $(ERED)\1$(ERST),'
+# $(call sh_check_warning, logfile)
+define sh_check_warning
+$(GREP) "Warning:" $(1:%.tex=%.log) | sed -e 's,^\(.*\):,  $(ERED)\1$(ERST):,'
 endef
 
 # $(call sh_run_tex, source_file, target_suffix)
+pdfLATEX:=$(PDFLATEX)
+dviLATEX:=$(LATEX)
 define sh_run_tex
-$(if $(filter pdf,$2),$(call sh_runpdftex,$1)) \
-$(if $(filter dvi,$2),$(call sh_runtex,$1))
+$(call sh_cprun,$(value $2LATEX),$1,$(1:%.tex=%.$2)); \
+$(value $2LATEX) $(TEXOPTS) $1 $(NULLOUT);            \
+$(call sh_check_warning,$1)
+endef
+
+define sh_run_dvips
+$(call sh_cprun,$(DVIPS),$1,$(1:%.dvi=%.ps)); \
+$(DVIPS) $1 $(NULLERR)
 endef
 
 #$(call sh_runsed,REGEXP,IN,OUT)
@@ -205,21 +205,22 @@ $(1:%.tex=%.$2) : $1 $(filter-out %.eps,$(value $1_deps))
 	### list changed requisite:
 	@printf "+ $$(EBLU)%s$$(ERST) \n" "$$?"
 	### Run $$(tool) and bibtex once:
-	@if ( printf "$$?" | $$(GREP) -q "\.bib\s\+" ); then         \
+	@if ( printf "$$?" | $$(GREP) -q "\.bib\s\+" ); then    \
 $$(call sh_run_tex, $$<,$2) && $$(call sh_runbib, $$<); fi; \
 $$(call sh_run_tex, $$<,$2)
 	### repeat $$(tool)/bibtex up to $$(MAXRPT) times or until no more undefined reference warning 
-	@m=0; while $$(EGREP) $$(GRPW1) $$(PDFLOG)              \
+	@m=0; while $$(GREP) -q $$(GRPW1) $$(PDFLOG)               \
 && [ "$$$$m" -lt $$(MAXRPT) ]; do                           \
-$$(GREP) -o $$(GRPW3) $$(PDFLOG) | grep -o "[^\`]*$$$$";   \
 $$(call sh_runbib, $$<) && $$(call sh_run_tex, $$<,$2);     \
 m=$$$$(( m + 1 )); done;
-	@m=0; while $$(EGREP) $$(GRPW2) $$(PDFLOG)              \
+	### repeat $$(tool)/bibtex up to $$(MAXRPT) times or until no more label changed warning
+	@m=0; while $$(GREP) -q $$(GRPW2) $$(PDFLOG)               \
 && [ "$$$$m" -lt $$(MAXRPT) ]; do                           \
 $$(call sh_run_tex,$$<,$2) ;                                \
 m=$$$$(( m + 1 )); done;
 	@echo
 endef
+#$$(GREP) -o $$(GRPW3) $$(PDFLOG) | grep -o "[^\`]*$$$$";    \
 
 define recipe_make_zip_package
 $(1:%.tex=%.zip) : $1 $(value $1_deps)
@@ -228,4 +229,4 @@ endef
 
 ############# Usual rules #############
 %.ps : %.dvi
-	@dvips $<
+	@$(call sh_run_dvips, $<);

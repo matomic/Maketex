@@ -19,9 +19,13 @@ $(foreach x,$(MAIN_TEX_SRC),            \
 .PHONY : all clean pkg info
 
 # ALL
-all : $(TARGET_PDF)
+all : pdf
 	### Not made: $(TARGET_DVI)
 	### Not made: $(TARGET_PS)
+
+pdf : $(TARGET_PDF)
+dvi : $(TARGET_DVI)
+ps  : $(TARGET_PS)
 
 depinfo:
 	@printf ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n"
