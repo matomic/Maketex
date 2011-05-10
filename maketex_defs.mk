@@ -5,7 +5,7 @@ GRPW1   :="LaTeX Warning: There were undefined references.
 GRPW1   :=$(GRPW1)|Package natbib Warning: There were undefined citations."
 GRPW2   :="LaTeX Warning: Label(s) may have changed. Rerun to get cross-references right."
 GRPW3   :="LaTeX Warning: Citation \`[^']*"
-GRPBT   :="\.bib[[:space:]]?"
+GRPBT   :=
 ### Some more useful regular expression:
 TeXARG  :={[^{}]*}
 TeXOPT  :=\(\[[^][]*\]\|\)
@@ -18,7 +18,8 @@ PDFTK   := pdftk
 BIBTEX  := bibtex
 EPSPDF  := epstopdf
 
-EGREP   := egrep
+GREP    := grep
+EGREP   := $(GREP) -e 
 SED     := sed
 # should work with both gawk (preferred) and mawk
 AWK     := awk
@@ -43,6 +44,24 @@ NULLALL  =&> /dev/null
 PDFLOG=$(@:%.pdf=%.log)
 DVILOG=$(@:%.dvi=%.log)
 
+############# TeX dependency macros #############
+### For each master file BASE.tex, define variables BASE_deps, BASE_texs, BASE_bibs, BASE_figs, BASE_vector, BASE_raster that holds its requisites.
+rmsuffix=$(1:%$(suffix $1)=%)
+define texallchildren
+$1_texs := $(call texdeepinclude,$1)
+endef
+define texauxiliaries
+$(foreach x,$1 $(value $1_texs),
+$1_bibs += $(call includedbibs,$x)
+$1_figs += $(addprefix $(FIGS_PATH_PREFIX),$(call includedfigs,$x)))
+endef
+# divide figs further up between vector and raster graphics
+define texdeps_all
+$1_vector = $(filter %.eps %.pdf,$(value $1_figs))
+$1_raster = $(filter %.png %.jpg,$(value $1_figs))
+$1_deps   = $(strip $1 $(value $1_texs) $(value $1_bibs) $(value $1_figs))
+endef
+
 ############# Check TeX file for dependency #############
 ## shell echo by suffix; if the shell variable ${$1} has suffix $2, print it:
 define sh_echo_file_with_suffix
@@ -62,8 +81,7 @@ define sh_echo_tex_cmd_args
 [ -f $(1) ] && grep -o $(TEXCMD_GREP_RE) $(1)                         \
     | grep -o "$(TeXARG)" | tr -d "{}" | tr , "\n" | while read f; do \
     $(foreach s,$3,$(call sh_echo_file_with_suffix,f,.$s);)                \
-        [[ -n "$4" ]] && (true;$(foreach s,$4,echo $${f}.$s;)) \
-        || (true;$(foreach s,$3,echo $${f}.$s;)) \
+    $(if $4,$(foreach s,$4,echo $${f}.$s;),$(foreach s,$3,echo $${f}.$s;)) \
     done
 endef
 
@@ -139,13 +157,21 @@ endef
 # run pdflatex
 define sh_runpdftex
 $(call sh_cprun,$(PDFLATEX),$1,$(subst tex,pdf,$1)); \
-$(PDFLATEX) $(TEXOPTS) $1 $(NULLOUT)
+$(PDFLATEX) $(TEXOPTS) $1 $(NULLOUT); \
+$(GREP) "Warning:" $(1:%.tex=%.log)
 endef
 
 # run latex
 define sh_runtex
 $(call sh_cprun,$(LATEX),$1,$(subst tex,dvi,$1)); \
-  $(LATEX) $(TEXOPTS) $1 $(NULLOUT)
+$(LATEX) $(TEXOPTS) $1 $(NULLOUT); \
+$(GREP) "Warning:" $(1:%.tex=%.log)
+endef
+
+# $(call sh_run_tex, source_file, target_suffix)
+define sh_run_tex
+$(if $(filter pdf,$2),$(call sh_runpdftex,$1)) \
+$(if $(filter dvi,$2),$(call sh_runtex,$1))
 endef
 
 #$(call sh_runsed,REGEXP,IN,OUT)
@@ -168,40 +194,37 @@ endef
 ############# END: LaTeX grind works #############
 
 .SECONDEXPANSION:
-# This rule makes pdf from a master file:
-%.pdf : %.tex $$(value $$(call rmsuffix,$$@).tex_deps)
-	@# print changed dependents
-	@printf "+ "; $(call sh_cprintf,$?,$(EBLU)); printf "\n";
-	@# Run tex and bibtex if necessary
-	@if ( printf "$?" | egrep -q $(GRPBT) ); then \
-$(call sh_runpdftex, $<) && $(call sh_runbib, $<); \
-fi; \
-$(call sh_runpdftex, $<)
-	@# Check log for 
-	@m=0; while $(EGREP) $(GRPW1) $(PDFLOG) \
-&& [ "$$m" -lt $(MAXRPT) ]; do \
-( $(EGREP) -o $(GRPW3) $(PDFLOG) | grep -o "[^\`]*$$"; \
-$(call sh_runbib, $<) && $(call sh_runpdftex,$<) ); \
-m=$$(( m + 1 )); done; # check for undefined
-	@m=0; while $(EGREP) $(GRPW2) $(PDFLOG) \
-&& [ "$$m" -lt $(MAXRPT) ]; do \
-( $(call sh_runpdftex,$<) ); \
-m=$$(( m + 1 )); done;
 
-%.zip : %.tex $$(value $$(call rmsuffix,$$@).tex_deps)
+## That MASTER rule and recipe for doing all the tex, bibtex work!
+## $(call recipe_make_from_tex, source_file, target_suffix)
+define recipe_make_from_tex
+$(if $(filter pdf,$2), tool:=pdftex,  \
+	$(if $(filter dvi,$2), tool:=tex, \
+		$(error "What the heck is $2?")))
+$(1:%.tex=%.$2) : $1 $(filter-out %.eps,$(value $1_deps))
+	# list changed requisite:
+	@printf "+ $$(EBLU)%s$$(ERST) \n" "$$?"
+	# Run $$(tool) and bibtex once:
+	@if ( printf "$$?" | $$(GREP) -q "\.bib\s\+" ); then         \
+$$(call sh_run_tex, $$<,$2) && $$(call sh_runbib, $$<); fi; \
+$$(call sh_run_tex, $$<,$2)
+	# repeat $$(tool)/bibtex up to $$(MAXRPT) times or until no more undefined reference warning 
+	@m=0; while $$(EGREP) $$(GRPW1) $$(PDFLOG)              \
+&& [ "$$$$m" -lt $$(MAXRPT) ]; do                           \
+$$(GREP) -o $$(GRPW3) $$(PDFLOG) | grep -o "[^\`]*$$$$";   \
+$$(call sh_runbib, $$<) && $$(call sh_run_tex, $$<,$2);     \
+m=$$$$(( m + 1 )); done;
+	@m=0; while $$(EGREP) $$(GRPW2) $$(PDFLOG)              \
+&& [ "$$$$m" -lt $$(MAXRPT) ]; do                           \
+$$(call sh_run_tex,$$<,$2) ;                                \
+m=$$$$(( m + 1 )); done;
+endef
+
+define recipe_make_zip_package
+$(1:%.tex=%.zip) : $1 $(value $1_deps)
 	zip $@ $^
+endef
 
-%.dvi : %.tex $$(value $$(call rmsuffix,$$@).tex_deps)
-	@printf "+ "; $(call sh_cprintf,$?,$(EBLU)); printf "\n";
-	@$(call sh_runtex,$<)
-	@if ( printf "$?" | egrep -q $(GRPBT) ); then \
-	( $(call sh_runbib, $<) ) && $(call sh_runtex,$<) \
-	fi
-	@m=0; while $(EGREP) $(GRPW1) $(subst pdf,log,$@) \
-	&& [ "$$m" -lt $(MAXRPT) ]; do \
-	( ( $(call sh_runbib, $<) ) && $(call sh_runtex,$<) ); \
-	m=$$(( m + 1 )); done;
-	@m=0; while $(EGREP) $(GRPW2) $(subst pdf,log,$@) \
-	&& [ "$$m" -lt $(MAXRPT) ]; do \
-	( $(call sh_runtex,$<) ); \
-	m=$$(( m + 1 )); done;
+############# Usual rules #############
+%.ps : %.dvi
+	@dvips $<

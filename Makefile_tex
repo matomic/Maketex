@@ -3,38 +3,25 @@ include maketex_defs.mk # common make defs for my various latex projects
 
 ### Identify LaTeX mater file by \documentclass
 MASTER  = "^\\\\documentclass"
-MAINTEXSRC = $(shell grep -l $(MASTER) *.tex)
-PDFOUT  = $(MAINTEXSRC:%.tex=%.pdf)
+MAIN_TEX_SRC = $(shell grep -l $(MASTER) *.tex)
+TARGET_PDF = $(MAIN_TEX_SRC:%.tex=%.pdf)
+TARGET_DVI = $(MAIN_TEX_SRC:%.tex=%.dvi)
+TARGET_PS  = $(MAIN_TEX_SRC:%.tex=%.ps)
 # The variable MAINBIB if define is used to generate a partial bibliography exactly equal to the need of this project from my master library. Perhaps should grep from source in the future
 MAINBIB = bibliography.bib
 
-### For each master file BASE.tex, define variables BASE_deps, BASE_texs, BASE_bibs, BASE_figs, BASE_vector, BASE_raster that holds its requisites.
-rmsuffix=$(1:%$(suffix $1)=%)
-define texallchildren
-$1_texs := $(call texdeepinclude,$1)
-endef
-define texauxiliaries
-$(foreach x,$1 $(value $1_texs),
-$1_bibs += $(call includedbibs,$x)
-$1_figs += $(call includedfigs,$x))
-endef
-# divide figs further up between vector and raster graphics
-define texdeps_all
-$1_vector = $(filter %.eps %.pdf,$(value $1_figs))
-$1_raster = $(filter %.png %.jpg,$(value $1_figs))
-$1_deps   = $(strip $1 $(value $1_texs) $(value $1_bibs) $(value $1_figs))
-endef
 #
-$(foreach x,$(MAINTEXSRC),                           \
-	$(eval $(call texallchildren,$(x)))              \
-	$(eval $(call texauxiliaries,$(x)))              \
+$(foreach x,$(MAIN_TEX_SRC),            \
+	$(eval $(call texallchildren,$(x))) \
+	$(eval $(call texauxiliaries,$(x))) \
 	$(eval $(call texdeps_all,$(x))))
 
 .PHONY : all clean pkg info
 
 # ALL
-all : $(PDFOUT)
-###$(PDFOUT:pdf=bib)
+all : $(TARGET_PDF)
+	# Not made: $(TARGET_DVI)
+	# Not made: $(TARGET_PS)
 
 depinfo:
 	@printf ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n"
@@ -43,33 +30,38 @@ $(EGRN)incl files$(ERST)  : %s\n  \
 $(EGRN)Bib files$(ERST)   : %s\n  \
 $(EGRN)Vector figs$(ERST) : %s\n  \
 $(EGRN)Raster figs$(ERST) : %s\n  \
-$(EGRN)Everything$(ERST)  : %s\n\
+$(EGRN)Everything$(ERST)  : %s\n  \
 >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\
-\n" $(foreach x, $(MAINTEXSRC),                           \
-"$(x:%.tex=%.pdf)" "$x"                                \
-"$(filter-out $x,$(value $x_texs))" \
-"$(value $x_bibs)"                     \
-"$(sort $(value $x_vector))"             \
-"$(sort $(value $x_raster))"             \
+\n" $(foreach x, $(MAIN_TEX_SRC),           \
+"$(x:%.tex=%.pdf)" "$x"                     \
+"$(filter-out $x,$(value $x_texs))"         \
+"$(value $x_bibs)"                          \
+"$(sort $(value $x_vector))"                \
+"$(sort $(value $x_raster))"                \
 "$(value $x_deps)")
-	$(foreach x,$(MAINTEXSRC), \
+	$(foreach x,$(MAIN_TEX_SRC),            \
 $(call sh_auxlist,$x $(value $x_texs));)
-	$(foreach x,$(MAINTEXSRC), \
+	$(foreach x,$(MAIN_TEX_SRC),            \
 $(call sh_auxlist_2,$x $(value $x_texs));)
 
-# $(foreach x,$(MAINTEXSRC) introduction.tex, \
-$(call sh_echo_tex_cmd_args,$x,includegraphics,eps pdf jpg png,eps pdf);)
-pkg : $(PDFOUT) $(PDFOUT:pdf=zip)
+pkg : $(MAIN_TEX_SRC:%.tex=%.pdf) $(MAIN_TEX_SRC:%.tex=%.zip)
 
-## If main bib
+############################################################################
+$(foreach x,$(MAIN_TEX_SRC),$(eval $(call recipe_make_from_tex,$x,dvi)))
+$(foreach x,$(MAIN_TEX_SRC),$(eval $(call recipe_make_from_tex,$x,pdf)))
+$(foreach x,$(MAIN_TEX_SRC),$(eval $(call recipe_make_zip_package,$x)))
+############################################################################
+
+## Make partial .bib from master .bib file defined in $(MAINBIB)
 ifdef MAINBIB
 BIBPROG = mkBiBfTeX.py
-RUNBIB  = python $(BIBPROG)
+RUNBIB  = ./$(BIBPROG)
 %.bib : %.tex $(MAINBIB) $(BIBPROG)
+	# Generating partial bibliography from master file $(MAINBIB):
 	@$(call sh_cprun,mkBiBfTex.py,$?,$@);
-	@( $(RUNBIB) $^ > _$@ ) && mv _$@ $@ || rm _$@
+	@ $(RUNBIB) $^ > _$@ && mv _$@ $@ || rm _$@
 endif
 
-LAUNDARY=*.aux *.out *.log *.bbl *.blg *.bak $(PDFOUT)
+LAUNDARY=*.aux *.out *.log *.bbl *.blg *.bak $(TARGET_PDF) $(TARGET_DVI) $(TARGET_PS)
 clean :
 	rm -f $(LAUNDARY);
