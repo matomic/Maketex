@@ -57,7 +57,7 @@ ifdef MAINBIB
 BIBPROG = mkBiBfTeX.py
 RUNBIB  = ./$(BIBPROG)
 %.bib : %.tex $(MAINBIB) $(BIBPROG)
-	# Generating partial bibliography from master file $(MAINBIB):
+	### Generating partial bibliography from master file $(MAINBIB):
 	@$(call sh_cprun,mkBiBfTex.py,$?,$@);
 	@ $(RUNBIB) $^ > _$@ && mv _$@ $@ || rm _$@
 endif

@@ -158,14 +158,14 @@ endef
 define sh_runpdftex
 $(call sh_cprun,$(PDFLATEX),$1,$(subst tex,pdf,$1)); \
 $(PDFLATEX) $(TEXOPTS) $1 $(NULLOUT); \
-$(GREP) "Warning:" $(1:%.tex=%.log)
+printf "  %s\n" "$(GREP) "Warning:" $(1:%.tex=%.log)"
 endef
 
 # run latex
 define sh_runtex
 $(call sh_cprun,$(LATEX),$1,$(subst tex,dvi,$1)); \
 $(LATEX) $(TEXOPTS) $1 $(NULLOUT); \
-$(GREP) "Warning:" $(1:%.tex=%.log)
+printf "  %s\n" `$(GREP) "Warning:" $(1:%.tex=%.log)`
 endef
 
 # $(call sh_run_tex, source_file, target_suffix)
@@ -202,13 +202,13 @@ $(if $(filter pdf,$2), tool:=pdftex,  \
 	$(if $(filter dvi,$2), tool:=tex, \
 		$(error "What the heck is $2?")))
 $(1:%.tex=%.$2) : $1 $(filter-out %.eps,$(value $1_deps))
-	# list changed requisite:
+	### list changed requisite:
 	@printf "+ $$(EBLU)%s$$(ERST) \n" "$$?"
-	# Run $$(tool) and bibtex once:
+	### Run $$(tool) and bibtex once:
 	@if ( printf "$$?" | $$(GREP) -q "\.bib\s\+" ); then         \
 $$(call sh_run_tex, $$<,$2) && $$(call sh_runbib, $$<); fi; \
 $$(call sh_run_tex, $$<,$2)
-	# repeat $$(tool)/bibtex up to $$(MAXRPT) times or until no more undefined reference warning 
+	### repeat $$(tool)/bibtex up to $$(MAXRPT) times or until no more undefined reference warning 
 	@m=0; while $$(EGREP) $$(GRPW1) $$(PDFLOG)              \
 && [ "$$$$m" -lt $$(MAXRPT) ]; do                           \
 $$(GREP) -o $$(GRPW3) $$(PDFLOG) | grep -o "[^\`]*$$$$";   \
@@ -218,6 +218,7 @@ m=$$$$(( m + 1 )); done;
 && [ "$$$$m" -lt $$(MAXRPT) ]; do                           \
 $$(call sh_run_tex,$$<,$2) ;                                \
 m=$$$$(( m + 1 )); done;
+	@echo
 endef
 
 define recipe_make_zip_package
