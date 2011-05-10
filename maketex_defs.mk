@@ -158,14 +158,14 @@ endef
 define sh_runpdftex
 $(call sh_cprun,$(PDFLATEX),$1,$(subst tex,pdf,$1)); \
 $(PDFLATEX) $(TEXOPTS) $1 $(NULLOUT); \
-printf "  %s\n" "$(GREP) "Warning:" $(1:%.tex=%.log)"
+$(GREP) "Warning:" $(1:%.tex=%.log) | sed -e 's,^\(.*Warning\),  $(ERED)\1$(ERST),'
 endef
 
 # run latex
 define sh_runtex
 $(call sh_cprun,$(LATEX),$1,$(subst tex,dvi,$1)); \
 $(LATEX) $(TEXOPTS) $1 $(NULLOUT); \
-printf "  %s\n" `$(GREP) "Warning:" $(1:%.tex=%.log)`
+$(GREP) "Warning:" $(1:%.tex=%.log) | sed -e 's,^\(.*\):,  $(ERED)\1$(ERST),'
 endef
 
 # $(call sh_run_tex, source_file, target_suffix)

@@ -20,8 +20,8 @@ $(foreach x,$(MAIN_TEX_SRC),            \
 
 # ALL
 all : $(TARGET_PDF)
-	# Not made: $(TARGET_DVI)
-	# Not made: $(TARGET_PS)
+	### Not made: $(TARGET_DVI)
+	### Not made: $(TARGET_PS)
 
 depinfo:
 	@printf ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n"
