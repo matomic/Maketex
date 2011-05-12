@@ -12,11 +12,11 @@ MAINBIB = bibliography.bib
 
 #
 $(foreach x,$(MAIN_TEX_SRC),            \
-	$(eval $(call texallchildren,$(x))) \
-	$(eval $(call texauxiliaries,$(x))) \
-	$(eval $(call texdeps_all,$(x))))
+	$(eval $(call mm_tex_descendants,$x)) \
+	$(eval $(call mm_tex_auxiliaries,$x)) \
+	$(eval $(call mm_tex_alldeps,$x)))
 
-.PHONY : all clean pkg info
+.PHONY : all clean depinfo pkg 
 
 # ALL
 all : pdf
@@ -43,9 +43,9 @@ $(EGRN)Everything$(ERST)  : %s\n  \
 "$(sort $(value $x_vector))"                \
 "$(sort $(value $x_raster))"                \
 "$(value $x_deps)")
-	$(foreach x,$(MAIN_TEX_SRC),            \
+#	@$(foreach x,$(MAIN_TEX_SRC),           \
 $(call sh_auxlist,$x $(value $x_texs));)
-	$(foreach x,$(MAIN_TEX_SRC),            \
+#	@$(foreach x,$(MAIN_TEX_SRC),           \
 $(call sh_auxlist_2,$x $(value $x_texs));)
 
 pkg : $(MAIN_TEX_SRC:%.tex=%.pdf) $(MAIN_TEX_SRC:%.tex=%.zip)
@@ -62,8 +62,9 @@ BIBPROG = mkBiBfTeX.py
 RUNBIB  = ./$(BIBPROG)
 %.bib : %.tex $(MAINBIB) $(BIBPROG)
 	### Generating partial bibliography from master file $(MAINBIB):
+	@printf "+ $(EBLU)%s$(ERST) \n" "$?"
 	@$(call sh_cprun,mkBiBfTex.py,$?,$@);
-	@ $(RUNBIB) $^ > _$@ && mv _$@ $@ || rm _$@
+	@$(RUNBIB) $< $(MAINBIB) > _$@ && mv _$@ $@ || rm _$@
 endif
 
 LAUNDARY=*.aux *.out *.log *.bbl *.blg *.bak $(TARGET_PDF) $(TARGET_DVI) $(TARGET_PS)

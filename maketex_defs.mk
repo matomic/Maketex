@@ -5,11 +5,7 @@ GRPW1   :="LaTeX Warning: There were undefined references.\
 \|Package natbib Warning: There were undefined citations."
 GRPW2   :="LaTeX Warning: Label(s) may have changed. Rerun to get cross-references right."
 GRPW3   :="Warning: Citation \`[^']*"
-GRPBT   :=
-### Some more useful regular expression:
-TeXARG  :={[^{}]*}
-TeXOPT  :=\(\[[^][]*\]\|\)
-TeXPFX  :=^[^%]*\\\\
+
 ### System binaries
 TEXOPTS := -interaction=nonstopmode
 LATEX   := latex
@@ -45,22 +41,90 @@ NULLALL :=>& /dev/null
 PDFLOG=$(@:%.pdf=%.log)
 DVILOG=$(@:%.dvi=%.log)
 
+### Some more useful regular expression:
+re_nobrace :=[^}{]*
+re_nosqrbr :=[^][]*
+re_texcmd  :=^[^%]*\\\\
+re_texarg  :={$(re_nobrace)}
+re_texopt  :=\[$(re_nosqrbr)\]
+
 ############# TeX dependency macros #############
-### For each master file BASE.tex, define variables BASE_deps, BASE_texs, BASE_bibs, BASE_figs, BASE_vector, BASE_raster that holds its requisites.
 rmsuffix=$(1:%$(suffix $1)=%)
-define texallchildren
-$1_texs := $(call texdeepinclude,$1)
+## $(call mm_tex_descendants, tex_file)
+## Generate macro to hold list of \input and \include children of tex_file
+## tex_file_texs = {\input{*} and \include{*} items in tex_file}
+define mm_tex_descendants
+$1_texs := $(call tex_all_descendants,$1)
 endef
-define texauxiliaries
+
+## $(call mm_tex_auxiliaries, tex_file)
+## Generates macro to hold list of auxiliary files for tex_file
+## tex_file_bibs = {bibtex files used in tex_file and its children}
+## tex_file_figs = {figures included in tex_file and its children}
+define mm_tex_auxiliaries
 $(foreach x,$1 $(value $1_texs),
 $1_bibs += $(call includedbibs,$x)
-$1_figs += $(addprefix $(FIGS_PATH_PREFIX),$(call includedfigs,$x)))
+$1_figs += $(addprefix ./$(FIGS_PATH_PREFIX)/,$(call includedfigs,$x)))
 endef
-# divide figs further up between vector and raster graphics
-define texdeps_all
+
+## $(call mm_tex_alldeps, tex_file)
+## Generate macros that holds all dependencies for compiling tex_file
+## divide figs further up between vector and raster graphics
+define mm_tex_alldeps
 $1_vector = $(filter %.eps %.pdf,$(value $1_figs))
 $1_raster = $(filter %.png %.jpg,$(value $1_figs))
 $1_deps   = $(strip $1 $(value $1_texs) $(value $1_bibs) $(value $1_figs))
+endef
+
+############# LaTeX/BibTeX citation parsing functions #############
+# awk binary and regular expression used in awk:
+awk_re_bib_prem = /^@(STRING)\s*{/
+awk_re_bib_item = /^@(ARTICLE|BOOK|UNPUBLISHED)\s*{/
+# awk function to count braces:
+awk_fnc_pcntbrc = function foo() { print; lb+=split(\$$0,a,/{/); rb+=split(\$$0,a,/}/); }
+
+########
+## $(call sh_cite_keys_in_tex, tex_source)
+## print list of cited bibliographic key in tex_source
+define sh_cite_keys_in_tex
+[ -f "$1" ] && grep -o "$(re_texcmd)\(cite\|onlinecite\){$(re_nobrace)}" $1 \
+	| grep -o "{$(re_nobrace)}$$" | grep -o "$(re_nobrace)" | tr -d ","
+endef
+
+########
+## $(call mm_tex_cite_keys, tex_source)
+## Assign a macro for list of cited bibliographic key in tex_source
+define mm_tex_cite_key
+$1_cites := $(shell $(call sh_cite_keys_in_tex,$1))
+endef
+
+########
+## $(call sh_get_bibitem_by_key, key, master_bib)
+## Retrieve bibitem with key from master_bib
+define sh_get_bibitem_by_key
+$(AWK) "BEGIN {FS=\"{\"} $(awk_fnc_pcntbrc) \
+	toupper(\$$0)  ~ $(awk_re_bib_item){ if ( \$$2 ~ /$1,/ ) { foo(); }} \
+	toupper(\$$0) !~ $(awk_re_bib_item){ if (lb != rb) { foo(); }}" $2
+endef
+
+########
+## $(call sh_get_bibpreamble, master_bib)
+## Retrive preamble from master bib
+define sh_get_bibpreamble
+$(AWK) "$(awk_fnc_pcntbrc) \
+	toupper(\$$0)  ~ $(awk_re_bib_prem){ print \"\"; foo(); } \
+	toupper(\$$0) !~ $(awk_re_bib_prem){ if (lb != rb) { foo(); }}" $1
+endef
+
+########
+## $(call sh_make_partial_bib, tex_sourse, master_bib, target_bib)
+## Make a partial bib file target_bib by retrieving preamble and
+## items identified by keys cited in tex_source from master_bib.
+define sh_make_partial_bib
+echo -n '' > $3; \
+	$(call sh_get_bibpreamble, $2) >> $3; echo >> $3; \
+	$(foreach k,$(sort $(shell $(call sh_cite_keys_in_tex,$1))), \
+	$(if $k,$(call sh_get_bibitem_by_key,$k,$2) >> $3; echo>>$3;)) echo >>$3
 endef
 
 ############# Check TeX file for dependency #############
@@ -77,26 +141,28 @@ endef
 ## $2 is a colon separated list of latex commands
 ## $3 is a list of suffix to match
 ## $4 (OPTIONAL) is a default list of suffix to print when all suffix in $3 failed.
-TEXCMD_GREP_RE="^[^%]*\\\\\($(subst :,\|,$2)\)\(\|\[[^][]*\]\){[^}{]*}"
+re_grep_texcmd="$(re_texcmd)\($(subst :,\|,$2)\)\(\|$(re_texopt)\)$(re_texarg)"
 define sh_echo_tex_cmd_args
-[ -f $(1) ] && grep -o $(TEXCMD_GREP_RE) $(1)                         \
-    | grep -o "$(TeXARG)" | tr -d "{}" | tr , "\n" | while read f; do \
-    $(foreach s,$3,$(call sh_echo_file_with_suffix,f,.$s);)                \
+[ -f $(1) ] && grep -o $(re_grep_texcmd) $(1) \
+    | grep -o "$(re_texarg)" | tr -d "{}" | tr , "\n" | while read f; do \
+    $(foreach s,$3,$(call sh_echo_file_with_suffix,f,.$s);) \
     $(if $4,$(foreach s,$4,echo $${f}.$s;),$(foreach s,$3,echo $${f}.$s;)) \
     done
 endef
 
-## given tex filename $1 print its immediate includes
-define includedtexs
-$(shell $(call sh_echo_tex_cmd_args,$1,include:input,tex);)
+## $(call tex_children, tex_file)
+## prints the arguments of uncommented \input and \include command in tex_file
+define tex_children
+$(shell $(call sh_echo_tex_cmd_args,$1,include:input,tex))
 endef
 ##
 
-## giving a tex filename, print it, the parse and print all child
-## tex source recursively.
-define texdeepinclude
-$(call includedtexs,$1)\
-$(foreach inp,$(call includedtexs,$1),$(call texdeepinclude,$(inp)))
+## $(call tex_all_descendants, tex_file)
+## All descendants of tex_file
+## FIXME: NO WARNING FOR POTENTIAL RECURSION HAZARD
+define tex_all_descendants 
+$(call tex_children,$1)\
+$(foreach inp,$(call tex_children,$1),$(call tex_all_descendants,$(inp)))
 endef
 ##
 
@@ -195,8 +261,14 @@ endef
 
 .SECONDEXPANSION:
 
-## That MASTER rule and recipe for doing all the tex, bibtex work!
-## $(call recipe_make_from_tex, source_file, target_suffix)
+## $(call recipe_make_from_tex, tex_file, target_suffix)
+## That MASTER rule and recipe for doing all the tex, bibtex grunt works.
+## 1. With the correct dependency list, run (pdf)latex to generate target
+## 2. Scan log for Warning.
+## 3. If citation warning is found, rerun bibtex/(pdf)latex until all such
+##    warning vanishes
+## 4. If citation warning persists after MAXRPT tries, quit and print list
+##    of unsatisfied citation/labels.
 define recipe_make_from_tex
 $(if $(filter pdf,$2), tool:=pdftex,  \
 	$(if $(filter dvi,$2), tool:=tex, \
