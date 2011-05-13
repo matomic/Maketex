@@ -64,7 +64,7 @@ endef
 define mm_tex_auxiliaries
 $(foreach x,$1 $(value $1_texs),
 $1_bibs += $(call includedbibs,$x)
-$1_figs += $(addprefix ./$(FIGS_PATH_PREFIX)/,$(call includedfigs,$x)))
+$1_figs += $(addprefix $(FIGS_PATH_PREFIX)$(if $(FIGS_PATH_PREFIX),/),$(call includedfigs,$x)))
 endef
 
 ## $(call mm_tex_alldeps, tex_file)
@@ -87,8 +87,10 @@ awk_fnc_pcntbrc = function foo() { print; lb+=split(\$$0,a,/{/); rb+=split(\$$0,
 ## $(call sh_cite_keys_in_tex, tex_source)
 ## print list of cited bibliographic key in tex_source
 define sh_cite_keys_in_tex
-[ -f "$1" ] && grep -o "$(re_texcmd)\(cite\|onlinecite\){$(re_nobrace)}" $1 \
-	| grep -o "{$(re_nobrace)}$$" | grep -o "$(re_nobrace)" | tr -d ","
+$(foreach f,$1, \
+	[ -f "$f" ] && grep -o "$(re_texcmd)\(cite\|onlinecite\){$(re_nobrace)}" $1 \
+	| grep -o "{$(re_nobrace)}$$" | grep -o "$(re_nobrace)" | tr -d ",";) \
+echo > /dev/null
 endef
 
 ########
@@ -117,14 +119,13 @@ $(AWK) "$(awk_fnc_pcntbrc) \
 endef
 
 ########
-## $(call sh_make_partial_bib, tex_sourse, master_bib, target_bib)
-## Make a partial bib file target_bib by retrieving preamble and
-## items identified by keys cited in tex_source from master_bib.
+## $(call sh_make_partial_bib, cite_keys, master_bib, target_bib)
+## Make a partial bib file $3=target_bib by retrieving preamble and
+## items identified by keys cited in $1=tex_source from $2=master_bib.
 define sh_make_partial_bib
-echo -n '' > $3; \
-	$(call sh_get_bibpreamble, $2) >> $3; echo >> $3; \
-	$(foreach k,$(sort $(shell $(call sh_cite_keys_in_tex,$1))), \
-	$(if $k,$(call sh_get_bibitem_by_key,$k,$2) >> $3; echo>>$3;)) echo >>$3
+echo > $3; $(call sh_get_bibpreamble, $2) >> $3; echo >> $3; \
+$(foreach k,$(sort $1), $(call sh_get_bibitem_by_key,$k,$2) >> $3; echo>>$3;)
+echo >>$3
 endef
 
 ############# Check TeX file for dependency #############
@@ -261,8 +262,19 @@ endef
 
 .SECONDEXPANSION:
 
+## $(call recipe_partial_bib, tex_file, source_bib)
+## make partial bib file by selecting bib items from $2 source_bib with
+## keys cited in $1 tex_file
+## Assumes : macro $1_cites defined
+define recipe_make_partial_bib
+$(1:%.tex=%_test.bib) : $1 $2
+	@$$(call sh_make_partial_bib, \
+		$$(shell $$(call sh_cite_keys_in_tex,$$(value $$<_texs))), \
+		$$(filter %.bib,$$?),$$@)
+endef
+
 ## $(call recipe_make_from_tex, tex_file, target_suffix)
-## That MASTER rule and recipe for doing all the tex, bibtex grunt works.
+## That MASTER rule and recipe for doing all the latex, bibtex, etc.
 ## 1. With the correct dependency list, run (pdf)latex to generate target
 ## 2. Scan log for Warning.
 ## 3. If citation warning is found, rerun bibtex/(pdf)latex until all such
