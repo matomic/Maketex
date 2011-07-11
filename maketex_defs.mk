@@ -42,7 +42,7 @@ PDFLOG=$(@:%.pdf=%.log)
 DVILOG=$(@:%.dvi=%.log)
 
 ### Some more useful regular expression:
-re_nobrace :=[^}{]*
+re_nobrace :=[^}{\#]*
 re_nosqrbr :=[^][]*
 re_texcmd  :=^[^%]*\\\\
 re_texarg  :={$(re_nobrace)}
@@ -50,36 +50,49 @@ re_texopt  :=\[$(re_nosqrbr)\]
 
 ############# TeX dependency macros #############
 rmsuffix=$(1:%$(suffix $1)=%)
-## $(call mm_tex_descendants, tex_file)
+## $(call macro_tex_descendants, tex_file)
 ## Generate macro to hold list of \input and \include children of tex_file
 ## tex_file_texs = {\input{*} and \include{*} items in tex_file}
-define mm_tex_descendants
+define macro_tex_descendants
 $1_texs := $(call tex_all_descendants,$1)
 endef
 
-## $(call mm_tex_auxiliaries, tex_file)
+## $(call macro_tex_auxiliaries, tex_file)
 ## Generates macro to hold list of auxiliary files for tex_file
 ## tex_file_bibs = {bibtex files used in tex_file and its children}
 ## tex_file_figs = {figures included in tex_file and its children}
-define mm_tex_auxiliaries
+define macro_tex_auxiliaries
 $(foreach x,$1 $(value $1_texs),
 $1_bibs += $(call includedbibs,$x)
-$1_figs += $(addprefix $(FIGS_PATH_PREFIX)$(if $(FIGS_PATH_PREFIX),/),$(call includedfigs,$x)))
+$1_figs += $(addprefix $(FIGS_PATH_PREFIX)$(if $(FIGS_PATH_PREFIX),/), \
+	$(call includedfigs,$x)))
 endef
 
-## $(call mm_tex_alldeps, tex_file)
-## Generate macros that holds all dependencies for compiling tex_file
-## divide figs further up between vector and raster graphics
-define mm_tex_alldeps
-$1_vector = $(filter %.eps %.pdf,$(value $1_figs))
-$1_raster = $(filter %.png %.jpg,$(value $1_figs))
-$1_deps   = $(strip $1 $(value $1_texs) $(value $1_bibs) $(value $1_figs))
+## $(call macro_tex_depinfo, tex_files)
+## for each foo.tex in tex_files, evaluates the following macros:
+## foo.tex_texs : recursive list of included tex files.
+## foo.tex_bibs : recursive list of bib file used.
+## foo.tex_figs : resursive list of figs (eps, pdf, jpg, png) included
+## foo.tex_pdfdeps : filtered deps for pdflatex
+## foo.tex_dvideps : filtered deps for latex
+## foo.tex_deps : all of above
+define macro_tex_depinfo
+$(foreach x,$(filter %.tex,$1), \
+	$(eval $(call macro_tex_descendants,$x)) \
+	$(eval $(call macro_tex_auxiliaries,$x)) \
+	$(eval $x_pdfdeps = $(strip $x $(value $x_texs) $(value $x_bibs)   \
+							$(filter-out %.eps,$(value $x_figs))))     \
+	$(eval $x_dvideps = $(strip $x $(value $x_texs) $(value $x_bibs)   \
+							$(filter %.eps,$(value $x_figs))))         \
+	$(eval $x_deps = $(strip $x $(value $x_texs) $(value $x_bibs)      \
+							$(value $x_figs)))   \
+	$(eval all_bibs += $(sort $(value $x_bibs))) \
+	$(eval all_texs += $(sort $(value $x_texs))))
 endef
-
 ############# LaTeX/BibTeX citation parsing functions #############
 # awk binary and regular expression used in awk:
 awk_re_bib_prem = /^@(STRING)\s*{/
-awk_re_bib_item = /^@(ARTICLE|BOOK|UNPUBLISHED)\s*{/
+awk_re_bib_item = /^@(ARTICLE|BOOK|INBOOK|UNPUBLISHED)\s*{/
 # awk function to count braces:
 awk_fnc_pcntbrc = function foo() { print; lb+=split(\$$0,a,/{/); rb+=split(\$$0,a,/}/); }
 
@@ -88,16 +101,21 @@ awk_fnc_pcntbrc = function foo() { print; lb+=split(\$$0,a,/{/); rb+=split(\$$0,
 ## print list of cited bibliographic key in tex_source
 define sh_cite_keys_in_tex
 $(foreach f,$1, \
-	[ -f "$f" ] && grep -o "$(re_texcmd)\(cite\|onlinecite\){$(re_nobrace)}" $1 \
-	| grep -o "{$(re_nobrace)}$$" | grep -o "$(re_nobrace)" | tr -d ",";) \
+	[ -f "$f" ] && grep -o "\\\\\(nocite\|cite\|onlinecite\)$(re_texarg)" $1 \
+	| grep -o "{$(re_nobrace)}$$" | grep -o "$(re_nobrace)" | tr "," " ";) \
 echo > /dev/null
 endef
 
 ########
-## $(call mm_tex_cite_keys, tex_source)
+## $(call macro_tex_cite_keys, tex_source)
 ## Assign a macro for list of cited bibliographic key in tex_source
-define mm_tex_cite_key
-$1_cites := $(shell $(call sh_cite_keys_in_tex,$1))
+define macro_tex_cite_key
+$1_cites := $(sort $(shell $(call sh_cite_keys_in_tex,$1)))
+endef
+
+define macro_tex_citeinfo
+$(foreach x,$1,$(eval $(call macro_tex_cite_key,$x)) \
+	$(foreach y,$(value $x_texs), $(eval $(call macro_tex_cite_key,$y))))
 endef
 
 ########
@@ -124,8 +142,8 @@ endef
 ## items identified by keys cited in $1=tex_source from $2=master_bib.
 define sh_make_partial_bib
 echo > $3; $(call sh_get_bibpreamble, $2) >> $3; echo >> $3; \
-$(foreach k,$(sort $1), $(call sh_get_bibitem_by_key,$k,$2) >> $3; echo>>$3;)
-echo >>$3
+$(foreach k,$(sort $1), $(call sh_get_bibitem_by_key,$k,$2) >> $3; echo >> $3;) \
+echo >> $3
 endef
 
 ############# Check TeX file for dependency #############
@@ -178,9 +196,9 @@ define includedfigs
 $(shell $(call sh_echo_tex_cmd_args,$1,includegraphics,jpg png eps pdf,eps pdf);)
 endef
 ##
-############# END: Check TeX file for dependency #############
+###### END: Check TeX file for dependency ######
 
-############# BEGIN: Pretty print #############
+############## BEGIN: Pretty print #############
 ### print string using color
 # $(call cprintf,"STR",COLOR)
 define sh_cprintf
@@ -224,7 +242,7 @@ endef
 
 # $(call sh_check_warning, logfile)
 define sh_check_warning
-$(GREP) "Warning:" $(1:%.tex=%.log) | sed -e 's,^\(.*\):,  $(ERED)\1$(ERST):,'
+$(GREP) "Warning:" $(1:%.tex=%.log) | sed -e 's,^\(.*Warning\):,  $(ERED)\1$(ERST):,'
 endef
 
 # $(call sh_run_tex, source_file, target_suffix)
@@ -262,17 +280,20 @@ endef
 
 .SECONDEXPANSION:
 
+##################################################
 ## $(call recipe_partial_bib, tex_file, source_bib)
 ## make partial bib file by selecting bib items from $2 source_bib with
 ## keys cited in $1 tex_file
 ## Assumes : macro $1_cites defined
 define recipe_make_partial_bib
-$(1:%.tex=%_test.bib) : $1 $2
+$(value $1_bibs) : $1 $2
+	# $$(foreach x,$$< $$(value $$<_texs),$$(value $$x_cites))
 	@$$(call sh_make_partial_bib, \
-		$$(shell $$(call sh_cite_keys_in_tex,$$(value $$<_texs))), \
-		$$(filter %.bib,$$?),$$@)
+		$$(foreach x,$$< $$(value $$<_texs),$$(value $$x_cites)), \
+		$$(filter %.bib,$$^),$$@)
 endef
 
+##################################################
 ## $(call recipe_make_from_tex, tex_file, target_suffix)
 ## That MASTER rule and recipe for doing all the latex, bibtex, etc.
 ## 1. With the correct dependency list, run (pdf)latex to generate target
@@ -285,7 +306,7 @@ define recipe_make_from_tex
 $(if $(filter pdf,$2), tool:=pdftex,  \
 	$(if $(filter dvi,$2), tool:=tex, \
 		$(error "What the heck is $2?")))
-$(1:%.tex=%.$2) : $1 $(filter-out %.eps,$(value $1_deps))
+$(1:%.tex=%.$2) : $(value $1_$2deps)
 	### list changed requisite:
 	@printf "+ $$(EBLU)%s$$(ERST) \n" "$$?"
 	### Run $$(tool) and bibtex once:
@@ -307,10 +328,70 @@ endef
 #$$(GREP) -o $$(GRPW3) $$(PDFLOG) | grep -o "[^\`]*$$$$";    \
 
 define recipe_make_zip_package
-$(1:%.tex=%.zip) : $1 $(value $1_deps)
-	zip $@ $^
+$(1:%.tex=%_pdf.zip) : $(1:%.tex=%.pdf)
+	zip $$@ $$(value $1_pdfdeps) $(NULLOUT)
+$(1:%.tex=%_ps.zip) : $(1:%.tex=%.ps)
+	zip $$@ $(1:%.tex=%.ps) $$(value $1_dvideps) $(NULLOUT)
 endef
 
 ############# Usual rules #############
 %.ps : %.dvi
 	@$(call sh_run_dvips, $<);
+
+#####################################################################################
+# Use documentclass macro to identity master tex source
+MASTER_TEX = $(shell grep -l "^\\\\documentclass$(re_texopt)$(re_texarg)" *.tex)
+# Target list by simple substitution
+TARGET_PDF = $(MASTER_TEX:%.tex=%.pdf)
+TARGET_DVI = $(MASTER_TEX:%.tex=%.dvi)
+TARGET_PS  = $(MASTER_TEX:%.tex=%.ps)
+
+# Define macros BASE.tex_texs, BASE.tex_bibs, BASE.tex_figs, BASE.tex_deps
+$(call  macro_tex_depinfo, $(MASTER_TEX))
+$(call  macro_tex_citeinfo, $(MASTER_TEX))
+
+#####################################################################################
+all:
+# to be overwritten later?
+
+depinfo:
+	@printf "========================================\n"
+	@printf "%s << $(EYLW)%s$(ERST)\n  \
+$(EGRN)incls$(ERST)    : %s\n  \
+$(EGRN)bibs$(ERST)     : %s\n  \
+$(EBLU)graphics$(ERST) : %s\n  \
+$(EBLU)images$(ERST)   : %s\n  \
+$(ERED)latex$(ERST)    : %s\n  \
+$(ERED)pdflatex$(ERST) : %s\n========================================\
+\n" $(foreach x, $(MASTER_TEX), \
+"$(x:%.tex=%.pdf)" "$x" "$(value $x_texs)" "$(value $x_bibs)" \
+"$(sort $(filter %.eps %.pdf,$(value $x_figs)))"              \
+"$(sort $(filter %.jpeg %.jpg %.png,$(value $x_figs)))"       \
+"$(value $x_dvideps)" "$(value $x_pdfdeps)") | fmt -s -w 75
+
+citeinfo:
+	@printf "$(EYLW)%s$(ERST) : %s\n" $(foreach x, $(MASTER_TEX), "$(x)" "$(value $x_cites)" \
+		$(foreach y,$(value $x_texs),"$y" "$(value $y_cites)")) | fmt -s -w 75 -u -t
+
+.PHONY : depinfo citeinfo
+
+#####################################################################################
+$(foreach x,$(MASTER_TEX),$(eval $(call recipe_make_from_tex,$x,dvi)))
+
+$(foreach x,$(MASTER_TEX),$(eval $(call recipe_make_from_tex,$x,pdf)))
+
+$(foreach x,$(MASTER_TEX),$(eval $(call recipe_make_zip_package,$x)))
+#####################################################################################
+## Make partial .bib from master .bib file defined in $(MAINBIB)
+ifdef MAINBIB
+#BIBPROG = mkBiBfTeX.py
+#RUNBIB  = ./$(BIBPROG)
+#%.bib : %.tex $(MAINBIB) $(BIBPROG)
+#	### Generating partial bibliography from master file $(MAINBIB):
+#	@printf "+ $(EBLU)%s$(ERST) \n" "$?"
+#	@$(call sh_cprun,mkBiBfTex.py,$?,$@);
+#	@$(RUNBIB) $< $(MAINBIB) > _$@ && mv _$@ $@ || rm _$@
+
+$(foreach x,$(MASTER_TEX),$(eval $(call recipe_make_partial_bib,$x,$(MAINBIB))))
+endif
+############################################################################

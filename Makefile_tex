@@ -1,24 +1,23 @@
 #SHELL    = bash
-include maketex_defs.mk # common make defs for my various latex projects
-
-### Identify LaTeX mater file by \documentclass
-MASTER  = "^\\\\documentclass"
-MAIN_TEX_SRC = $(shell grep -l $(MASTER) *.tex)
-TARGET_PDF = $(MAIN_TEX_SRC:%.tex=%.pdf)
-TARGET_DVI = $(MAIN_TEX_SRC:%.tex=%.dvi)
-TARGET_PS  = $(MAIN_TEX_SRC:%.tex=%.ps)
-# The variable MAINBIB if define is used to generate a partial bibliography exactly equal to the need of this project from my master library. Perhaps should grep from source in the future
-#MAINBIB = bibliography.bib
-
+###############################################################################
+# By including maketex_defs.mk, one obtains the following macros
+#   MASTER_TEX
+#     list of master tex file in current directory
+#   TARGET_PDF TARGET_DVI TARGET_PS
+#     latex target of various format
 #
-$(foreach x,$(MAIN_TEX_SRC),            \
-	$(eval $(call mm_tex_descendants,$x)) \
-	$(eval $(call mm_tex_auxiliaries,$x)) \
-	$(eval $(call mm_tex_alldeps,$x)))
+# and phony targets
+#   depinfo
+#     display all depenency information under current directory
+#   citeinfo
+#     display all citation information under current directory
+# 
+include maketex_defs.mk
+###############################################################################
+ 
+.PHONY : all clean pkg
 
-.PHONY : all clean depinfo pkg 
-
-# ALL
+## now add your favorite targets:
 all : pdf
 	### Not made: $(TARGET_DVI)
 	### Not made: $(TARGET_PS)
@@ -27,48 +26,8 @@ pdf : $(TARGET_PDF)
 dvi : $(TARGET_DVI)
 ps  : $(TARGET_PS)
 
-depinfo:
-	@printf ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n"
-	@printf "%s << %s\n  \
-$(EGRN)incl files$(ERST)  : %s\n  \
-$(EGRN)Bib files$(ERST)   : %s\n  \
-$(EGRN)Vector figs$(ERST) : %s\n  \
-$(EGRN)Raster figs$(ERST) : %s\n  \
-$(EGRN)Everything$(ERST)  : %s\n  \
->>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\
-\n" $(foreach x, $(MAIN_TEX_SRC),           \
-"$(x:%.tex=%.pdf)" "$x"                     \
-"$(filter-out $x,$(value $x_texs))"         \
-"$(value $x_bibs)"                          \
-"$(sort $(value $x_vector))"                \
-"$(sort $(value $x_raster))"                \
-"$(value $x_deps)")
-#	@$(foreach x,$(MAIN_TEX_SRC),           \
-$(call sh_auxlist,$x $(value $x_texs));)
-#	@$(foreach x,$(MAIN_TEX_SRC),           \
-$(call sh_auxlist_2,$x $(value $x_texs));)
-
-pkg : $(MAIN_TEX_SRC:%.tex=%.pdf) $(MAIN_TEX_SRC:%.tex=%.zip)
+pkg : $(MASTER_TEX:%.tex=%_pdf.zip)
 
 LAUNDARY=*.aux *.out *.log *.bbl *.blg *.bak $(TARGET_PDF) $(TARGET_DVI) $(TARGET_PS)
 clean :
 	rm -f $(LAUNDARY);
-
-############################################################################
-$(foreach x,$(MAIN_TEX_SRC),$(eval $(call recipe_make_from_tex,$x,dvi)))
-$(foreach x,$(MAIN_TEX_SRC),$(eval $(call recipe_make_from_tex,$x,pdf)))
-$(foreach x,$(MAIN_TEX_SRC),$(eval $(call recipe_make_zip_package,$x)))
-
-## Make partial .bib from master .bib file defined in $(MAINBIB)
-ifdef MAINBIB
-BIBPROG = mkBiBfTeX.py
-RUNBIB  = ./$(BIBPROG)
-#%.bib : %.tex $(MAINBIB) $(BIBPROG)
-#	### Generating partial bibliography from master file $(MAINBIB):
-#	@printf "+ $(EBLU)%s$(ERST) \n" "$?"
-#	@$(call sh_cprun,mkBiBfTex.py,$?,$@);
-#	@$(RUNBIB) $< $(MAINBIB) > _$@ && mv _$@ $@ || rm _$@
-
-$(foreach x,$(MAIN_TEX_SRC),$(eval $(call recipe_make_partial_bib,$x,$(MAINBIB))))
-endif
-############################################################################
