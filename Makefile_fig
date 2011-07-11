@@ -93,8 +93,8 @@ orphanpdf : $(orpPDF)
 orphaneps : $(orpeps)
 
 ######## Use with care #########
-allfromeps : all $(allEPS:.eps=.pdf)
-allfrompdf : all $(allPDF:.pdf=.eps)
+allfromeps : $(allEPS:.eps=.pdf)
+allfrompdf : $(allPDF:.pdf=.eps)
 
 #######
 depinfo :
