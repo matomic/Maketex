@@ -26,7 +26,7 @@ pdf : $(TARGET_PDF)
 dvi : $(TARGET_DVI)
 ps  : $(TARGET_PS)
 
-pkg : $(MASTER_TEX:%.tex=%_pdf.zip)
+pkg : $(MASTER_TEX:%.tex=%.zip) $(MASTER_TEX:%.tex=%_pdf.zip)
 
 LAUNDARY=*.aux *.out *.log *.bbl *.blg *.bak $(TARGET_PDF) $(TARGET_DVI) $(TARGET_PS)
 clean :

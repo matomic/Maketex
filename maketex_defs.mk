@@ -63,7 +63,7 @@ endef
 ## tex_file_figs = {figures included in tex_file and its children}
 define macro_tex_auxiliaries
 $(foreach x,$1 $(value $1_texs),
-$1_bibs += $(call includedbibs,$x)
+$1_bibs += $(call includedbibs,$x) $(MAINBIB)
 $1_figs += $(addprefix $(FIGS_PATH_PREFIX)$(if $(FIGS_PATH_PREFIX),/), \
 	$(call includedfigs,$x)))
 endef
@@ -147,11 +147,6 @@ echo >> $3
 endef
 
 ############# Check TeX file for dependency #############
-## shell echo by suffix; if the shell variable ${$1} has suffix $2, print it:
-define sh_echo_file_with_suffix
-if [[ $${$1%$2}$2 = $${$1} ]]; then echo $${$1}; continue; fi
-endef
-
 ## $(call define sh_echo_tex_cmd_args,filename,latexcommand,suffix)
 ## scan file list in $1 for uncommented command \$2[OPTS]{ARGS} for comma
 ## separated list of file in ARGS
@@ -164,7 +159,7 @@ re_grep_texcmd="$(re_texcmd)\($(subst :,\|,$2)\)\(\|$(re_texopt)\)$(re_texarg)"
 define sh_echo_tex_cmd_args
 [ -f $(1) ] && grep -o $(re_grep_texcmd) $(1) \
     | grep -o "$(re_texarg)" | tr -d "{}" | tr , "\n" | while read f; do \
-    $(foreach s,$3,$(call sh_echo_file_with_suffix,f,.$s);) \
+    $(foreach s,$3,( [[ $${f%.$s}.$s = $${f} ]] && echo $${f} && continue );) \
     $(if $4,$(foreach s,$4,echo $${f}.$s;),$(foreach s,$3,echo $${f}.$s;)) \
     done
 endef
@@ -286,7 +281,7 @@ endef
 ## keys cited in $1 tex_file
 ## Assumes : macro $1_cites defined
 define recipe_make_partial_bib
-$(value $1_bibs) : $1 $2
+$(filter-out $(MAINBIB),$(value $1_bibs)) : $1 $2
 	# $$(foreach x,$$< $$(value $$<_texs),$$(value $$x_cites))
 	@$$(call sh_make_partial_bib, \
 		$$(foreach x,$$< $$(value $$<_texs),$$(value $$x_cites)), \
@@ -329,9 +324,11 @@ endef
 
 define recipe_make_zip_package
 $(1:%.tex=%_pdf.zip) : $(1:%.tex=%.pdf)
-	zip $$@ $$(value $1_pdfdeps) $(NULLOUT)
+	zip $$@ $(1:%.tex=%.pdf) $$(value $1_pdfdeps) $(NULLOUT)
 $(1:%.tex=%_ps.zip) : $(1:%.tex=%.ps)
 	zip $$@ $(1:%.tex=%.ps) $$(value $1_dvideps) $(NULLOUT)
+$(1:%.tex=%.zip) : $(1:%.tex=%.pdf)
+	zip $$@ $$(value $1_pdfdeps) $$(value $1_dvideps) $(NULLOUT)
 endef
 
 ############# Usual rules #############
