@@ -141,9 +141,10 @@ endef
 ## Make a partial bib file $3=target_bib by retrieving preamble and
 ## items identified by keys cited in $1=tex_source from $2=master_bib.
 define sh_make_partial_bib
+if [ "$2" != "$3" ]; then \
 echo > $3; $(call sh_get_bibpreamble, $2) >> $3; echo >> $3; \
 $(foreach k,$(sort $1), $(call sh_get_bibitem_by_key,$k,$2) >> $3; echo >> $3;) \
-echo >> $3
+echo >> $3; fi
 endef
 
 ############# Check TeX file for dependency #############
