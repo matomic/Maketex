@@ -25,6 +25,7 @@ To see citation information run: `make citeinfo`
 
 ### WHAT WORKS AND HOW IT WORKS:
 Including `maketex_defs.mk` gives user access to the following MACROS:
+
 1. `MASTER_TEX`: List of master tex file in current directory. They are `*.tex` file in the current directory that contains the command `\documentclass[OPTS]{CLS}`.
 2. `TARGET_PDF TARGET_DVI TARGET_PS`: LaTeX target of various format. They are `$(MASTER_TEX)` files with substituted suffix and the following phony targets:
      - `depinfo` Display all dependency information under current directory
