@@ -8,10 +8,11 @@
 
 ### SOME USAGES:
 * Add the following line to the beginning of your Makefile (see Makefile_tex for example):
-```make
-include maketex_defs.mk
-all : $(TARGET_PDF) $(TARGET_DVI) $(TARGET_PS)
-```
+
+    ``` make
+    include maketex_defs.mk
+    all : $(TARGET_PDF) $(TARGET_DVI) $(TARGET_PS)
+    ```
 
 * To make all master files, add to Make file:
 
